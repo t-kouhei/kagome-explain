@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>渋滞ダッシュボード</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="data.js"></script>
+<script src="data_verify.js"></script>
+<style>
+  :root{
+    --bg:#f5f5f2; --surface:#ffffff; --ink:#2b2b29; --muted:#73726c;
+    --line:#dcdbd4; --info:#185fa5; --infobg:#e6f1fb;
+    --prejam:#d85a30; --prejam-ink:#993c1d; --control:#e24b4a; --normal:#9a9a93;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Yu Gothic UI","Hiragino Kaku Gothic ProN","Noto Sans JP",Meiryo,sans-serif;
+       font-size:13px;line-height:1.55;
+       -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility;
+       -webkit-user-select:none;-moz-user-select:none;user-select:none}
+  /* UI要素は長押し/ドラッグで選択ハイライトしない。入力欄(select/input)は通常どおり操作可。 */
+  input,select,textarea{-webkit-user-select:auto;user-select:auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;
+         padding:12px 18px;background:var(--surface);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header .title{font-size:16px;font-weight:600}
+  .steps{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+  .steps b{color:var(--ink);font-weight:600}
+  button{font:inherit;padding:7px 13px;border:1px solid var(--line);border-radius:8px;
+         background:var(--surface);cursor:pointer}
+  button.primary{border:2px solid var(--info);color:var(--info);font-weight:600}
+  button:hover{background:#f0efe9}
+  select{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;
+         background:var(--surface);color:var(--ink);cursor:pointer}
+  .wrap{display:grid;grid-template-columns:230px minmax(0,1fr);gap:14px;padding:14px 18px;align-items:start}
+  .rail{display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .card h3{margin:0 0 8px;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+  .rail .card h3{font-size:14px;font-weight:700;color:var(--ink);letter-spacing:0}
+  .kv{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:12px}
+  .kv span:first-child{color:var(--muted)}
+  .kv.em span:last-child{font-weight:600}
+  .data-card{padding:13px}
+  .data-card h3{margin-bottom:12px}
+  .field-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;margin:8px 0}
+  .field-row label,.file-meta-label{color:var(--muted);font-size:12px}
+  .field-row select{min-width:88px}
+  .file-panel{border-top:1px solid var(--line);margin-top:11px;padding-top:11px}
+  .file-meta{display:grid;grid-template-columns:1fr;gap:3px;margin-bottom:8px}
+  .file-name{display:block;max-width:100%;font-size:12px;font-weight:600;color:var(--ink);
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .file-native{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+  .file-button{display:flex;align-items:center;justify-content:center;width:100%;min-height:34px;
+               border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);
+               font-size:12px;font-weight:600;cursor:pointer}
+  .file-button:hover{background:#f0efe9}
+  .file-native:disabled + .file-button{color:#aaa;background:#f4f3ee;cursor:not-allowed}
+  .file-status{margin-top:7px;padding:7px 9px;border-radius:7px;background:#f6f7f2;
+               color:var(--muted);font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+  .data-card #runBtn{width:100%;margin-top:10px;min-height:36px}
+  .lyr{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);
+       border-radius:8px;margin-bottom:6px;cursor:pointer}
+  .lyr:hover{background:#f0efe9}
+  .lyr.on{border:2px solid var(--info);background:var(--infobg);color:var(--info-ink)}
+  .lyr .dot{width:9px;height:9px;border-radius:50%}
+  .toggle{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-top:4px}
+  .prm{margin:9px 0}
+  .prm-top{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:3px}
+  .prm-v{font-weight:700;color:var(--prejam)}
+  .card input[type=range]{width:100%;accent-color:var(--prejam);cursor:pointer}
+  .radio{display:flex;flex-direction:column;gap:4px;margin:3px 0 0}
+  .radio label{font-size:12px;color:var(--ink);display:flex;align-items:center;gap:6px;cursor:pointer}
+  .radio label.off{color:#aab;cursor:not-allowed}
+  .radio input{accent-color:var(--prejam)}
+  .hint2{font-size:10px;color:var(--faint)}
+  .prm-note{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5}
+  .main{display:flex;flex-direction:column;gap:12px}
+  .canvas{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px;position:relative;overflow:hidden;height:72vh;min-height:380px}
+  #svg{display:block;width:100%;height:100%}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);padding:4px 8px}
+  .legend i{display:inline-block;width:18px;height:3px;vertical-align:3px;margin-right:4px}
+  .cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .metric{background:#f1efe8;border-radius:8px;padding:10px 12px}
+  .metric .l{font-size:11px;color:var(--muted)}
+  .metric .n{font-size:22px;font-weight:600;line-height:1.2}
+  .future{background:#f1efe8;border:none}
+  .future .body{color:var(--muted);font-size:12px;line-height:1.6}
+  .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600}
+  text{font-family:inherit}
+  .hint{color:var(--muted);font-size:12px;line-height:1.6}
+  #fileRow{font-size:12px;color:var(--muted)}
+  .swatch{height:8px;border-radius:4px;margin-top:6px;
+          background:linear-gradient(90deg,#e6f1fb,#185fa5)}
+  .detail-overlay{position:absolute;left:12px;top:12px;z-index:3;
+          width:min(244px,calc(100% - 24px));max-height:calc(100% - 24px);
+          overflow:auto;background:rgba(255,255,255,.86);backdrop-filter:blur(4px);
+          border:1px solid var(--line);border-radius:9px;padding:10px 12px;
+          box-shadow:0 8px 24px rgba(0,0,0,.10)}
+  .detail-overlay h3{margin:0 0 8px;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.03em}
+  /* 表示レイヤー: マップ右上のフローティングバー */
+  .layer-overlay{position:absolute;right:12px;top:12px;z-index:3;display:flex;flex-direction:column;gap:5px;
+    background:rgba(255,255,255,.93);border:1px solid var(--line);border-radius:10px;padding:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.06);width:176px}
+  .layer-overlay .ttl{font-size:10.5px;font-weight:700;color:var(--muted);letter-spacing:.03em;padding:0 1px}
+  .layer-overlay .lyr{padding:5px 8px;font-size:11.5px}
+  /* ホバー・ツールチップ */
+  .tip{position:fixed;z-index:50;pointer-events:none;display:none;
+       background:#23242a;color:#fff;font-size:11.5px;line-height:1.55;
+       padding:7px 9px;border-radius:7px;box-shadow:0 4px 16px rgba(0,0,0,.25);max-width:230px}
+  .tip b{color:#fff} .tip .k{color:#a9adba;margin-right:5px}
+  .tip .pre{color:#ff9b6b;font-weight:700}
+  /* 危険な道路リスト */
+  .risk{display:flex;flex-direction:column;gap:3px;max-height:200px;overflow:auto}
+  .risk-row{display:flex;align-items:center;gap:7px;padding:4px 7px;border-radius:6px;
+            cursor:pointer;font-size:11.5px;border:1px solid transparent}
+  .risk-row:hover{background:#f0efe9}
+  .risk-row.on{border-color:var(--info);background:var(--infobg)}
+  .risk-row .sc{font-weight:700;width:32px;text-align:right}
+  .risk-row .lb{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .risk-row .cf{font-size:9px}
+  .risk-empty{font-size:11px;color:var(--muted);padding:4px 7px}
+  /* 制御シミュレーション パネル */
+  .ctl-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+  .ctl-kv{display:flex;justify-content:space-between;font-size:11.5px;padding:2px 0;border-bottom:1px dashed #e8e7e0}
+  .ctl-kv .b4{color:var(--muted)} .ctl-kv .af{font-weight:700}
+  .ctl-good{color:#1d9e75} .ctl-bad{color:#c22222}
+  .ctl-list{display:flex;flex-direction:column;gap:3px;margin-top:5px}
+  .ctl-item{display:flex;gap:7px;align-items:center;padding:3px 7px;border-radius:6px;cursor:pointer;font-size:11.5px;border:1px solid transparent}
+  .ctl-item:hover{background:#f0efe9}
+  .ctl-pill{font-size:10px;border-radius:9px;padding:1px 7px;white-space:nowrap}
+</style>
+</head>
+<body>
+<header>
+  <div class="title">🚦 渋滞ダッシュボード</div>
+  <div class="steps">
+    <b>① データセット</b><span>▸</span><b>② 実行</b><span>▸</span><b>③ 診断</b>
+    <button class="primary" id="reloadBtn" title="data.js を再読込">↻ 再読込</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="rail">
+    <div class="card data-card">
+      <h3>データの選択</h3>
+      <div class="field-row"><label for="gridSelect">表示範囲</label>
+        <select id="gridSelect">
+          <option value="2x2">2 × 2</option>
+          <option value="3x3" selected>3 × 3</option>
+          <option value="4x4">4 × 4</option>
+          <option value="5x5">5 × 5</option>
+        </select>
+      </div>
+      <div class="field-row"><label for="dataSourceSelect">データ種別</label>
+        <select id="dataSourceSelect">
+          <option value="dummy" selected>サンプル</option>
+          <option value="verify">検証データ</option>
+          <option value="xlsx">観測Excel</option>
+          <option value="csv">観測CSV</option>
+          <option value="json">解析JSON</option>
+        </select>
+      </div>
+      <div id="fileRow" class="file-panel">
+        <div class="file-meta">
+          <span class="file-meta-label">選択ファイル</span>
+          <span id="srcInfo" class="file-name">サンプル</span>
+        </div>
+        <input class="file-native" type="file" id="fileInput" accept=".json,application/json" disabled>
+        <label for="fileInput" id="fileLabel" class="file-button">ファイル読込</label>
+        <div id="fileStatus" class="file-status">サンプルデータを使用中</div>
+      </div>
+      <button class="primary" id="runBtn">▶ 実行</button>
+    </div>
+
+    <div class="card">
+      <h3>パラメータ調整（μ・β・閾値）</h3>
+      <div class="prm">
+        <div class="prm-top"><span>μ 容量（全道路共通）</span><span class="prm-v" id="muVal">–</span></div>
+        <input type="range" id="muSlider" min="500" max="3000" step="10">
+      </div>
+      <div class="prm">
+        <div class="prm-top"><span>β 均質さ</span><span class="prm-v" id="beVal">–</span></div>
+        <input type="range" id="beSlider" min="0.0002" max="0.01" step="0.0002">
+      </div>
+      <div class="prm">
+        <div class="prm-top"><span>τ 判定閾値</span><span class="prm-v" id="thVal">–</span></div>
+        <input type="range" id="thSlider" min="0.05" max="0.95" step="0.01">
+      </div>
+      <div style="border-top:1px solid #e8e7e0;margin:10px 0 7px"></div>
+      <div class="prm-top" style="margin-bottom:4px"><span><b>パラメータ設定案</b></span></div>
+      <div class="radio" id="presetRadios">
+        <label><input type="radio" name="preset" value="p1" checked> ① 容量基準</label>
+        <label><input type="radio" name="preset" value="p2"> ② 早期警戒</label>
+        <label><input type="radio" name="preset" value="custom"> カスタム</label>
+      </div>
+      <button id="resetPrm" style="width:100%;margin-top:9px">既定値に戻す</button>
+    </div>
+
+    <div class="card">
+      <h3>制御対象（上位）</h3>
+      <div id="riskList" class="risk"></div>
+    </div>
+
+  </div>
+
+  <div class="main">
+    <div class="canvas">
+      <div class="detail-overlay" id="detailCard">
+        <h3>選択中の詳細</h3>
+        <div id="detailBody" class="hint">格子上の辺(または回転量レイヤーの面)をクリックすると、ここに内訳が出ます。</div>
+      </div>
+      <div class="layer-overlay" id="layerBar">
+        <div class="ttl">表示レイヤー</div>
+        <div class="lyr" data-layer="observed"><span class="dot" style="background:#378ADD"></span>観測量 J</div>
+        <div class="lyr" data-layer="rotation"><span class="dot" style="background:#7F77DD"></span>回転量 s・σ</div>
+        <div class="lyr" data-layer="straight"><span class="dot" style="background:#1D9E75"></span>直進ポテンシャル J⁺/J⁻</div>
+        <div class="lyr on" data-layer="diagnosis"><span class="dot" style="background:#D85A30"></span>渋滞診断</div>
+        <div class="swatch" id="swatch"></div>
+        <div class="kv" style="margin-top:2px"><span id="scaleMin">–</span><span id="scaleMax">–</span></div>
+      </div>
+      <svg id="svg" width="100%" viewBox="0 0 760 460" role="img" aria-label="カゴメ格子の渋滞解析図"></svg>
+    </div>
+    <div class="legend" id="legend"></div>
+
+    <div class="cards3">
+      <div class="metric"><div class="l">制御対象</div><div class="n" id="mPre" style="color:var(--prejam)">–</div></div>
+      <div class="metric"><div class="l">制御必要</div><div class="n" id="mCtrl" style="color:var(--control)">–</div></div>
+      <div class="metric"><div class="l">伝播 t+r/c(最小)</div><div class="n" id="mProp">–</div></div>
+    </div>
+    <div id="integrity" style="font-size:11px;color:var(--muted);padding:2px 8px"></div>
+
+    <div class="card future">
+      <h3>🚦 制御シミュレーション（介入 → before/after）</h3>
+      <div class="body" id="ctlBody">読み込み中…</div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script>
+const C = {
+  observed:{ramp:d3.interpolateBlues, scaleKey:"observed", grad:["#e6f1fb","#185fa5"]},
+  rotation:{ramp:d3.interpolatePurples, scaleKey:"rotation_s", grad:["#eeedfe","#534ab7"]},
+  straight:{ramp:d3.interpolateGreens, scaleKey:"straight", grad:["#eaf3de","#3b6d11"]},
+};
+let DATA=null, layer="diagnosis", T=null, selected=null, viewN=3, voff=0;
+let EDGE_BY_ID=null;                          // id → edge（loadDataで構築）
+let CTRL={edgeId:null, step:0, baseline:null, renderedFor:null};  // 制御シミュ状態
+let LIVE={mu:0, beta:0.003, threshold:0.40, betaMethod:"phi", bmin:0.0010, bmax:0.0060, epsSource:"straight", preset:"p1"};
+let pendingJsonData=null, pendingCsvData=null, pendingXlsxData=null;
+
+function fmt(v){ if(v===null||v===undefined||!isFinite(v)) return "–";
+  const a=Math.abs(v); return a>=100?Math.round(v).toLocaleString():v.toFixed(2); }
+
+function minmax(values){
+  const vals=values.filter(v=>v!==null&&v!==undefined&&isFinite(v));
+  if(!vals.length) return {min:0,max:1};
+  return {min:Math.min(...vals),max:Math.max(...vals)};
+}
+
+function straightPotential(e){
+  return e.J_minus;
+}
+
+function computeTransform(d){
+  const xs=[], ys=[];
+  d.nodes.forEach(n=>{xs.push(n.x);ys.push(n.y);});
+  d.edges.forEach(e=>{xs.push(e.x1,e.x2);ys.push(e.y1,e.y2);});
+  const minx=Math.min(...xs),maxx=Math.max(...xs),miny=Math.min(...ys),maxy=Math.max(...ys);
+  // 図全体を1つの viewBox にまとめる。実際の拡縮は SVG の preserveAspectRatio="meet" が
+  // キャンバスにぴったり収める(スクロール無し・中央寄せ・余白は均一の自動レターボックス)。
+  const K=40, pad=20;
+  const uw=(maxx-minx)||1, uh=(maxy-miny)||1;
+  const W=Math.round(uw*K+2*pad), H=Math.round(uh*K+2*pad);
+  // y軸反転(計算座標は上が+、SVGは下が+)。D が下に来る。
+  return {sx:x=>pad+(x-minx)*K, sy:y=>pad+(maxy-y)*K, k:K, W, H};
+}
+
+function loadData(d){
+  DATA=d;
+  EDGE_BY_ID=new Map(d.edges.map(e=>[e.id,e]));
+  CTRL={edgeId:null, step:0, baseline:null, renderedFor:null};
+  const m=d.meta;
+  const gsel=document.getElementById("gridSelect");
+  const maxN=(m.view&&m.view.max)||m.cols;
+  if(gsel){
+    // 表示範囲はマスターサイズを超えないようにする(超える選択肢は無効化)
+    Array.from(gsel.options).forEach(o=>{ o.disabled=(parseInt(o.value)||0)>maxN; });
+    viewN=Math.min(parseInt(gsel.value)||maxN, maxN);
+    if(parseInt(gsel.value)>maxN) gsel.value=maxN+"x"+maxN;
+  }
+  initLive(m); applyLiveToSliders();
+  recompute();           // μ・β を反映して jam_score を再計算→描画
+}
+
+// ── ライブ調整：jam_score をブラウザ側で再計算（モデルと同一式）──
+// μ は全道路共通の容量定数。β は道路ごとに推定法(LIVE.betaMethod)で算出。
+const CAPACITY = 2000;                        // 1車線あたり容量(台/時/車線)
+const BPHI_MIN = 0.0010, BPHI_MAX = 0.0060;   // φ法の両端(街路〜高速)
+function sigmoid01(eps,mu,beta){ const x=beta*(eps-mu);
+  return x>=0 ? 1/(1+Math.exp(-x)) : Math.exp(x)/(1+Math.exp(x)); }
+function epsOf(e){                       // ε は直進ポテンシャル J⁻ に固定
+  let v=straightPotential(e);
+  if(!isFinite(v)) v=0;
+  if(v<0) v=0;           // 負の ε は 0 にクランプ
+  return v;
+}
+function phiOf(e){                       // 直進率 φ = J⁺/J_in (0..1)
+  const jin=e.J_in;
+  if(!(jin>0) || !isFinite(e.J_plus)) return 0;
+  return Math.max(0, Math.min(1, e.J_plus/jin));
+}
+function statBeta(){                      // 統計法: 4/IQR(直進ポテンシャル, 正のみ)
+  const v=DATA.edges.map(e=>straightPotential(e)).filter(x=>isFinite(x)&&x>0).sort((a,b)=>a-b);
+  if(v.length<2) return LIVE.beta;
+  const q=p=>{const i=(v.length-1)*p,lo=Math.floor(i),hi=Math.ceil(i);return v[lo]+(v[hi]-v[lo])*(i-lo);};
+  return 4/Math.max(1e-9, q(0.75)-q(0.25));
+}
+function betaForEdge(e){                  // 道路ごとの β を推定法から
+  switch(LIVE.betaMethod){
+    case "const": return LIVE.beta;
+    case "stat":  return LIVE._statBeta;
+    case "phi":
+    default:      return LIVE.bmin + (LIVE.bmax-LIVE.bmin)*phiOf(e);
+  }
+}
+function recompute(){
+  if(!DATA) return;
+  if(LIVE.betaMethod==="stat") LIVE._statBeta=statBeta();
+  let bmin=Infinity, bmax=-Infinity;
+  DATA.edges.forEach(e=>{
+    const be=betaForEdge(e);
+    if(be<bmin) bmin=be; if(be>bmax) bmax=be;
+    const s=sigmoid01(epsOf(e),LIVE.mu,be);
+    e.jam_score=s; e._beta=be;
+    e.is_pre_jam = s>=LIVE.threshold;
+    e.is_control_needed = e.is_pre_jam && e.accumulation>0;
+  });
+  LIVE._brange=[isFinite(bmin)?bmin:0, isFinite(bmax)?bmax:0];
+  syncParamUI();
+  render();
+  updateControlPanel();
+}
+// ── パラメータ設定案（解説書 第7章の「解釈モード」。バー操作でカスタムへ自動遷移） ──
+const PRESETS={   // 各案の意味・根拠は解説書 第7章
+  // 旧・②統計基準(μ=ε中央値/β=4/IQR/τ=0.50)は廃止: τ=0.50ではβが判定に効かず、
+  // μ=中央値では定義上つねに約半数が対象になるため(解説書 第7章の脚注参照)。
+  p1:{name:"① 容量基準", mu:()=>CAPACITY,      betaMethod:"phi",  threshold:0.40},
+  p2:{name:"② 早期警戒", mu:()=>0.85*CAPACITY, betaMethod:"phi",  threshold:0.35},
+};
+function applyPreset(key){
+  const ps=PRESETS[key];
+  LIVE.preset=key;
+  if(ps){
+    LIVE.mu=ps.mu();
+    LIVE.betaMethod=ps.betaMethod;
+    LIVE.threshold=ps.threshold;
+  }
+  applyLiveToSliders();
+  recompute();
+}
+function setCustomPreset(){              // バーを手で動かした → カスタム扱い
+  if(LIVE.preset==="custom") return;
+  LIVE.preset="custom";
+  const r=document.querySelector('input[name=preset][value="custom"]');
+  if(r) r.checked=true;
+}
+function initLive(m){
+  // 解析(build_analysis)が出した meta.params を唯一の真実として読む(無ければ既定にフォールバック)。
+  const p=(m && m.params)||{};
+  LIVE.mu=(p.mu>0)?p.mu:CAPACITY;
+  LIVE.beta=(p.beta>0)?p.beta:0.003;
+  LIVE.threshold=(p.jam_threshold!=null)?p.jam_threshold:0.40;
+  LIVE.betaMethod=p.beta_method||"phi";
+  LIVE.bmin=(p.beta_min!=null)?p.beta_min:BPHI_MIN;
+  LIVE.bmax=(p.beta_max!=null)?p.beta_max:BPHI_MAX;
+  LIVE.epsSource="straight";             // ε は直進ポテンシャル J⁻ に固定
+  // 読み込んだ既定が案①と一致するならモード=案①、そうでなければカスタム
+  LIVE.preset=(LIVE.betaMethod==="phi" && LIVE.mu===CAPACITY && LIVE.threshold===0.40)?"p1":"custom";
+}
+function applyLiveToSliders(){
+  const muS=document.getElementById("muSlider"), beS=document.getElementById("beSlider"), thS=document.getElementById("thSlider");
+  if(muS){ muS.min=500; muS.max=3000; muS.step=10; muS.value=LIVE.mu; }
+  if(beS){ beS.min=0.0002; beS.max=0.01; beS.step=0.0002; beS.value=LIVE.beta; }
+  if(thS){ thS.value=LIVE.threshold; }
+  const r=document.querySelector('input[name=preset][value="'+LIVE.preset+'"]');
+  if(r) r.checked=true;
+  syncParamUI();
+}
+function syncParamUI(){
+  const mv=document.getElementById("muVal"), bv=document.getElementById("beVal"),
+        tv=document.getElementById("thVal");
+  if(mv) mv.textContent=fmt(LIVE.mu);
+  if(tv) tv.textContent=LIVE.threshold.toFixed(2);
+  if(bv){
+    if(LIVE.betaMethod==="const") bv.textContent=LIVE.beta.toFixed(4);
+    else if(LIVE.betaMethod==="stat") bv.textContent=(LIVE._statBeta||0).toFixed(4);
+    else { const r=LIVE._brange||[0,0]; bv.textContent=r[0].toFixed(4)+"〜"+r[1].toFixed(4); }
+  }
+}
+function wireParams(){
+  const muS=document.getElementById("muSlider"), beS=document.getElementById("beSlider"),
+        thS=document.getElementById("thSlider"), rb=document.getElementById("resetPrm");
+  if(muS) muS.addEventListener("input",()=>{ LIVE.mu=+muS.value; setCustomPreset(); recompute(); });
+  if(beS) beS.addEventListener("input",()=>{ LIVE.beta=+beS.value; LIVE.betaMethod="const"; setCustomPreset(); recompute(); });
+  if(thS) thS.addEventListener("input",()=>{ LIVE.threshold=+thS.value; setCustomPreset(); recompute(); });
+  document.querySelectorAll('input[name=preset]').forEach(r=>r.addEventListener("change",()=>{
+    if(r.checked) applyPreset(r.value);
+  }));
+  if(rb) rb.addEventListener("click",()=>{ if(DATA) applyPreset("p1"); });
+}
+
+function colorScale(){
+  if(layer==="diagnosis"||layer==="observed"||layer==="rotation") return null;
+  const c=C[layer]; let sc=DATA.meta.scales[c.scaleKey];
+  if(layer==="straight") sc=minmax(DATA.edges.map(straightPotential));
+  document.getElementById("scaleMin").textContent="min "+fmt(sc.min);
+  document.getElementById("scaleMax").textContent="max "+fmt(sc.max);
+  document.getElementById("swatch").style.background=`linear-gradient(90deg,${c.grad[0]},${c.grad[1]})`;
+  const s=d3.scaleSequential(c.ramp).domain([sc.min,sc.max]).clamp(true);
+  return s;
+}
+
+// ── ホバー・ツールチップ ──
+function showTip(ev,e){
+  const t=document.getElementById("tip"); if(!t) return;
+  const pre=e.is_pre_jam;
+  const phi=(e.J_out>0&&isFinite(e.J_plus))?Math.max(0,Math.min(1,e.J_plus/e.J_out)):0;
+  t.innerHTML=
+    `<b>${e.source.type}(${e.source.i-voff},${e.source.j-voff}) → ${e.target.type}(${e.target.i-voff},${e.target.j-voff})</b> road${e.road}`+
+    `<div><span class="k">jam_score</span><b class="${pre?'pre':''}">${e.jam_score.toFixed(2)}</b>${pre?' 制御対象':''}</div>`+
+    `<div><span class="k">ε(直進J⁻)</span>${fmt(epsOf(e))}　<span class="k">β</span>${(e._beta!=null?e._beta.toFixed(4):'–')}　<span class="k">φ</span>${phi.toFixed(2)}</div>`+
+    `<div><span class="k">蓄積</span>${fmt(e.accumulation)}${e.is_control_needed?' <span class="pre">制御必要</span>':''}</div>`;
+  t.style.display="block"; moveTip(ev);
+}
+function moveTip(ev){
+  const t=document.getElementById("tip"); if(!t||t.style.display==="none") return;
+  const w=t.offsetWidth||220, h=t.offsetHeight||64;
+  let x=ev.clientX+14, y=ev.clientY+14;
+  if(x+w>window.innerWidth-8) x=ev.clientX-w-14;
+  if(y+h>window.innerHeight-8) y=ev.clientY-h-14;
+  t.style.left=x+"px"; t.style.top=y+"px";
+}
+function hideTip(){ const t=document.getElementById("tip"); if(t) t.style.display="none"; }
+
+// ── 制御対象リスト(jam_score 降順) ──
+function renderRiskList(edges){
+  const el=document.getElementById("riskList"); if(!el) return;
+  const pre=edges.filter(e=>e.is_pre_jam && !e.boundary_incomplete)
+                 .sort((a,b)=>b.jam_score-a.jam_score).slice(0,8);
+  if(!pre.length){ el.innerHTML='<div class="risk-empty">制御対象の道路はありません</div>'; return; }
+  el.innerHTML="";
+  pre.forEach(e=>{
+    const on=selected&&selected.type==="edge"&&selected.d.id===e.id;
+    const row=document.createElement("div");
+    row.className="risk-row"+(on?" on":"");
+    row.innerHTML=
+      `<span class="sc" style="color:${e.is_control_needed?'var(--control)':'var(--prejam)'}">${e.jam_score.toFixed(2)}</span>`+
+      `<span class="lb">${e.source.type}(${e.source.i-voff},${e.source.j-voff})→${e.target.type}(${e.target.i-voff},${e.target.j-voff}) r${e.road}</span>`+
+      (e.is_control_needed?'<span class="cf" style="color:var(--control)">●制御</span>':'')+
+      (ctlScenario(e.id)?'<span class="cf" title="制御シナリオあり">🚦</span>':'');
+    row.addEventListener("click",()=>selectEdge(e));
+    row.addEventListener("mouseenter",ev=>showTip(ev,e));
+    row.addEventListener("mousemove",moveTip);
+    row.addEventListener("mouseleave",hideTip);
+    el.appendChild(row);
+  });
+}
+
+function render(){
+  const svg=d3.select("#svg"); svg.selectAll("*").remove();
+  // ── 表示範囲(窓): マスターから 0..N-1 のセルだけを抽出して描く ──
+  // 値(jam_score, s, σ, J⁺/J⁻ 等)はマスター全体で計算済みなので、ここは部分集合の描画のみ。
+  const vm=DATA.meta.view||{offset:0,max:DATA.meta.cols};
+  voff=vm.offset||0;
+  const N=Math.min(viewN||vm.max, vm.max);
+  const keptNodes=DATA.nodes.filter(n=>n.i>=voff && n.i<voff+N && n.j>=voff && n.j<voff+N);
+  const ptSet=new Set(keptNodes.map(n=>n.x+","+n.y));
+  const inPt=(x,y)=>ptSet.has(x+","+y);
+  const vEdges=DATA.edges.filter(e=>inPt(e.x1,e.y1)&&inPt(e.x2,e.y2));
+  const vTris=DATA.triangles.filter(t=>t.verts.every(v=>inPt(v[0],v[1])));
+  const vHex=DATA.hexagons.filter(h=>h.verts.every(v=>inPt(v[0],v[1])));
+  const view={nodes:keptNodes,edges:vEdges,triangles:vTris,hexagons:vHex};
+  if(!keptNodes.length){ return; }
+  T=computeTransform(view);
+  svg.attr("viewBox",`0 0 ${T.W} ${T.H}`).attr("preserveAspectRatio","xMidYMid meet")
+     .attr("width","100%").attr("height","100%");
+  // 窓内のメトリクス
+  document.getElementById("mPre").textContent=vEdges.filter(e=>e.is_pre_jam).length;
+  document.getElementById("mCtrl").textContent=vEdges.filter(e=>e.is_control_needed).length;
+  const vIds=new Set(vEdges.map(e=>e.id));
+  const vProp=DATA.propagation.filter(p=>vIds.has(p.source_edge)&&vIds.has(p.target_edge));
+  const minT=vProp.length?Math.min(...vProp.map(p=>p.evaluation_time)):null;
+  document.getElementById("mProp").textContent=minT!=null?("+"+minT.toFixed(3)+"h"):"–";
+  // 整合性バッジ(窓内)
+  const incompleteN=vEdges.filter(e=>e.boundary_incomplete).length;
+  const viol=checkConsistency(vEdges);
+  const ig=document.getElementById("integrity");
+  if(ig) ig.innerHTML =
+    (viol===0 ? "整合性: <b style='color:#1d9e75'>OK</b>"
+              : "整合性: <b style='color:var(--control)'>逸脱"+viol+"件</b>")
+    + " ｜ 境界不完全: " + incompleteN + "辺"
+    + (incompleteN ? "（灰色破線＝近似）" : "");
+  document.querySelectorAll(".lyr").forEach(el=>el.classList.toggle("on",el.dataset.layer===layer));
+  const scaleShown = (layer==="straight");
+  document.getElementById("swatch").style.display=scaleShown?"block":"none";
+  document.getElementById("scaleMin").parentNode.style.display=scaleShown?"flex":"none";
+
+  const defs=svg.append("defs");
+  defs.append("marker").attr("id","ah").attr("markerWidth",9).attr("markerHeight",9)
+     .attr("refX",7).attr("refY",4).attr("orient","auto")
+     .append("path").attr("d","M0,0 L8,4 L0,8 Z").attr("fill","context-stroke");
+  defs.append("marker").attr("id","ah-ctrl").attr("markerWidth",9).attr("markerHeight",9)
+     .attr("refX",7).attr("refY",4).attr("orient","auto")
+     .append("path").attr("d","M0,0 L8,4 L0,8 Z").attr("fill","var(--control)");
+
+  const g=svg.append("g");
+  const cs=colorScale();
+
+  // ── 背景の三角形(上=黄, 下=青)。回転量レイヤーでは少し濃く ──
+  g.selectAll(".tribg").data(view.triangles).join("polygon")
+    .attr("points",t=>t.verts.map(v=>`${T.sx(v[0])},${T.sy(v[1])}`).join(" "))
+    .attr("fill",t=>t.orientation==="up"?"#fffaf0":"#f0f5ff")
+    .attr("fill-opacity",layer==="rotation"?0.7:0.5)
+    .attr("stroke","#e5e5e0").attr("stroke-width",0.5);
+
+  // ── 有向辺 ──
+  const off=4, shrink=18;
+  view.edges.forEach(e=>{
+    const x1=T.sx(e.x1),y1=T.sy(e.y1),x2=T.sx(e.x2),y2=T.sy(e.y2);
+    let dx=x2-x1,dy=y2-y1; const L=Math.hypot(dx,dy)||1; dx/=L;dy/=L;
+    const nx=-dy,ny=dx;
+    const sx=x1+dx*shrink+nx*off, sy=y1+dy*shrink+ny*off;
+    const ex=x2-dx*shrink+nx*off, ey=y2-dy*shrink+ny*off;
+    e._s=[sx,sy]; e._e=[ex,ey]; e._n=[nx,ny];
+    const sel = selected && selected.type==="edge" && selected.d.id===e.id;
+
+    if(e.boundary_incomplete){
+      // 境界不完全: 隣接欠損で値が近似。全レイヤーで灰色破線・数値非表示(誤認防止)。
+      g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+        .attr("stroke",sel?"#777":"#c9c8c2").attr("stroke-width",sel?1.6:0.8)
+        .attr("opacity",0.5).attr("stroke-dasharray","3 3");
+      g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+        .attr("stroke","transparent").attr("stroke-width",9).style("cursor","pointer")
+        .on("click",()=>selectEdge(e)).on("mouseenter",ev=>showTip(ev,e)).on("mousemove",moveTip).on("mouseleave",hideTip);
+      return;
+    }
+
+    if(layer==="diagnosis"){
+      // 介入 before/after の差分ハロー（緑=改善 / 赤=悪化）
+      if(CTRL.baseline && CTRL.baseline.has(e.id)){
+        const dj=e.jam_score - jamFromFields(CTRL.baseline.get(e.id));
+        if(Math.abs(dj)>=0.01){
+          g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+            .attr("stroke",dj<0?"#1d9e75":"#c22222").attr("stroke-width",6)
+            .attr("opacity",0.30).attr("stroke-linecap","round");
+        }
+      }
+      // 細い誘導線(矢じり無し) + クリック用の透明な太線
+      g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+        .attr("stroke",sel?"#555":"#cdccc6").attr("stroke-width",sel?1.6:0.8).attr("opacity",0.5);
+      g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+        .attr("stroke","transparent").attr("stroke-width",9).style("cursor","pointer")
+        .on("click",()=>selectEdge(e)).on("mouseenter",ev=>showTip(ev,e)).on("mousemove",moveTip).on("mouseleave",hideTip);
+      // 制御必要の辺: 渋滞(交通)の向きに赤い矢印。渋滞がどちらへ進むかを示す。
+      if(e.is_control_needed){
+        g.append("line").attr("x1",sx+nx*off).attr("y1",sy+ny*off)
+          .attr("x2",ex+nx*off).attr("y2",ey+ny*off)
+          .attr("stroke","var(--control)").attr("stroke-width",2.6).attr("opacity",0.95)
+          .attr("marker-end","url(#ah-ctrl)");
+      }
+      // 制御対象(閾値以上)の辺だけスコアを表示。それ以外は線のみ(過密回避。値はホバー/クリックで確認)。
+      const hot=e.jam_score>=LIVE.threshold;
+      if(hot){
+        const lx=sx+(ex-sx)*0.34+nx*9, ly=sy+(ey-sy)*0.34+ny*9;
+        g.append("text").attr("x",lx).attr("y",ly).attr("text-anchor","middle").attr("dy",3)
+          .attr("font-size",10.5).attr("font-weight",700)
+          .attr("stroke","#ffffff").attr("stroke-width",2.8).attr("paint-order","stroke")
+          .attr("fill","var(--control)").style("cursor","pointer")
+          .on("click",()=>selectEdge(e))
+          .on("mouseenter",ev=>showTip(ev,e)).on("mousemove",moveTip).on("mouseleave",hideTip)
+          .text(e.jam_score.toFixed(2));
+      }
+    } else if(layer==="observed"){
+      // 道路色＋実線(順方向 1,2,3)/破線(逆方向 4,5,6)＋各線の横に数値(参照図準拠)
+      const RC={1:"#E07020",4:"#E07020",2:"#228B55",5:"#228B55",3:"#9933CC",6:"#9933CC"};
+      const color=RC[e.road]||"#666", solid=e.road<=3, bw=solid?1.8:1.3;
+      const ln=g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+        .attr("stroke",color).attr("stroke-width",sel?bw+1.6:bw)
+        .attr("opacity",sel?1:(solid?0.9:0.55))
+        .attr("marker-end","url(#ah)").style("cursor","pointer").on("click",()=>selectEdge(e)).on("mouseenter",ev=>showTip(ev,e)).on("mousemove",moveTip).on("mouseleave",hideTip);
+      if(!solid) ln.attr("stroke-dasharray","5 3");
+      const lx=sx+(ex-sx)*0.34+nx*9, ly=sy+(ey-sy)*0.34+ny*9;
+      g.append("text").attr("x",lx).attr("y",ly).attr("text-anchor","middle").attr("dy",3)
+        .attr("font-size",9).attr("font-weight",solid?600:400)
+        .attr("stroke","#fff").attr("stroke-width",2.6).attr("paint-order","stroke")
+        .attr("fill",color).attr("opacity",solid?1:0.82).style("cursor","pointer")
+        .on("click",()=>selectEdge(e)).text(Math.round(e.J_out));
+    } else if(layer==="straight"){
+      // 直進ポテンシャル J⁻：各辺に数値、数字色は線色(連続スケール)と連動
+      const value=straightPotential(e);
+      const w=1.4, color=cs(value), opacity=sel?1:0.85;
+      g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+        .attr("stroke",color).attr("stroke-width",sel?w+1.6:w).attr("opacity",opacity)
+        .attr("marker-end","url(#ah)").style("cursor","pointer")
+        .on("click",()=>selectEdge(e)).on("mouseenter",ev=>showTip(ev,e)).on("mousemove",moveTip).on("mouseleave",hideTip);
+      const lx=sx+(ex-sx)*0.34+nx*9, ly=sy+(ey-sy)*0.34+ny*9;
+      g.append("text").attr("x",lx).attr("y",ly).attr("text-anchor","middle").attr("dy",3)
+        .attr("font-size",9).attr("font-weight",600)
+        .attr("stroke","#fff").attr("stroke-width",2.6).attr("paint-order","stroke")
+        .attr("fill",color).attr("opacity",opacity).style("cursor","pointer")
+        .on("click",()=>selectEdge(e)).text(Math.round(value));
+    } else {
+      // rotation: 道路色を薄く(矢じり無し)。主役は s/σ ボックス
+      const RCr={1:"#E07020",4:"#E07020",2:"#228B55",5:"#228B55",3:"#9933CC",6:"#9933CC"};
+      g.append("line").attr("x1",sx).attr("y1",sy).attr("x2",ex).attr("y2",ey)
+        .attr("stroke",RCr[e.road]||"#c9c8c2").attr("stroke-width",sel?2:0.9).attr("opacity",sel?0.7:0.35)
+        .style("cursor","pointer").on("click",()=>selectEdge(e)).on("mouseenter",ev=>showTip(ev,e)).on("mousemove",moveTip).on("mouseleave",hideTip);
+    }
+  });
+
+  // ── 回転量ボックス(各面の s, σ の +/- を表示) ──
+  if(layer==="rotation"){
+    view.triangles.forEach(t=>rotBox(g,T.sx(t.cx),T.sy(t.cy),t.orientation,t.i-voff,t.j-voff,t.s_plus,t.s_minus,()=>selectFace("tri",t)));
+    view.hexagons.forEach(h=>rotBox(g,T.sx(h.cx),T.sy(h.cy),"hex",h.i-voff,h.j-voff,h.sigma_plus,h.sigma_minus,()=>selectFace("hex",h)));
+  }
+
+  // ── 交差点ノード ──
+  const NC={C:"#7F77DD",D:"#D85A30",E:"#1D9E75"};
+  const nodes=g.selectAll(".node").data(view.nodes).join("g")
+    .attr("transform",n=>`translate(${T.sx(n.x)},${T.sy(n.y)})`);
+  nodes.append("circle").attr("r",12).attr("fill",n=>NC[n.type]);
+  nodes.append("text").attr("text-anchor","middle").attr("dy",3.8)
+    .attr("font-size",11).attr("fill","#fff").text(n=>n.type);
+
+  renderRiskList(vEdges);
+  drawLegend();
+}
+
+function rotationColors(kind){
+  return kind==="up" ? ["#FFF8DC","#C9A227","#8a6a0a"]
+       : kind==="down" ? ["#E8F0FF","#7b97d6","#3a55b0"]
+       : ["#FFF5E0","#DDAA55","#b56b1d"];
+}
+
+function rotBox(g,X,Y,kind,i,j,plus,minus,onclick){
+  // kind: 'up'(上向き三角形 sᵘ±) / 'down'(下向き三角形 sᵈ±) / 'hex'(六角形 σ±)
+  const COL = rotationColors(kind);
+  const isTri = kind==="up" || kind==="down";
+  const w=isTri?38:44, h=isTri?25:27;
+  // 三角形は面の重心座標にそのまま中央配置する。
+  const sh = 0;
+  const grp=g.append("g").attr("transform",`translate(${X-w/2},${Y+sh-h/2})`)
+    .style("cursor","pointer").on("click",onclick);
+  grp.append("rect").attr("width",w).attr("height",h).attr("rx",4)
+    .attr("fill",COL[0]).attr("fill-opacity",0.97).attr("stroke",COL[1]).attr("stroke-width",0.9);
+  const sym=kind==="hex"?"σ":"s";
+  const sup=kind==="up"?"u±":kind==="down"?"d±":"±";
+  const lab=grp.append("text").attr("x",w/2).attr("y",isTri?7:8).attr("text-anchor","middle")
+    .attr("fill",COL[2]).attr("font-size",5.5);
+  lab.append("tspan").text(sym);
+  lab.append("tspan").attr("dy",-2).attr("font-size",4.5).text(sup);
+  lab.append("tspan").attr("dy",3).attr("font-size",4.5).text(i+","+j);
+  grp.append("text").attr("x",w/2).attr("y",isTri?15.8:17).attr("text-anchor","middle")
+    .attr("font-size",7.5).attr("font-weight",600).attr("fill",COL[2])
+    .text("+ "+Math.round(plus).toLocaleString());
+  grp.append("text").attr("x",w/2).attr("y",isTri?23:24.5).attr("text-anchor","middle")
+    .attr("font-size",7.5).attr("font-weight",600).attr("fill",COL[2])
+    .text("− "+Math.round(minus).toLocaleString());
+}
+
+function checkConsistency(edges){
+  // 出力値の整合性関係を検算(計算はしない): J_in=J_out / J⁻=到着点J⁺
+  const by={}; edges.forEach(e=>by[e.id]=e);
+  let v=0;
+  edges.forEach(e=>{
+    if(Math.abs(e.J_in-e.J_out)>1e-2) v++;
+    const t=e.target, arr=by[`${t.type}_${t.i}_${t.j}_road${e.road}`];
+    if(arr && Math.abs(e.J_minus-arr.J_plus)>1e-2) v++;
+  });
+  return v;
+}
+
+function drawLegend(){
+  const L=document.getElementById("legend");
+  if(layer==="diagnosis"){
+    L.innerHTML=`<span>数値 = jam_score（<b style="color:var(--control)">赤=閾値${LIVE.threshold.toFixed(2)}以上</b> / 灰=未満）</span>
+      <span><i style="background:var(--control)"></i>赤矢印 = 渋滞の向き（制御必要の辺・交通と同じ向き）</span>`;
+    if(CTRL.baseline) L.innerHTML+=`<span><i style="background:#1d9e75"></i>緑ハロー = 介入で改善</span>
+      <span><i style="background:#c22222"></i>赤ハロー = 介入で悪化</span>`;
+  } else if(layer==="observed"){
+    L.innerHTML=`<span>数値 = 観測量 J_out（道路色）</span>
+      <span><i style="background:#E07020"></i>道路1,4 (C↔E)</span>
+      <span><i style="background:#228B55"></i>道路2,5 (D↔E)</span>
+      <span><i style="background:#9933CC"></i>道路3,6 (C↔D)</span>
+      <span>実線=順方向 / 破線=逆方向</span>`;
+  } else if(layer==="straight"){
+    L.innerHTML=`<span>線色・数値色 = 直進ポテンシャル J⁻(回転除去後・全辺共通スケール)</span>`;
+  } else {
+    L.innerHTML=`<span>各面のボックス = 回転量（+ 右回り / − 左回り）</span>
+      <span><i style="background:#C9A227"></i>上向き三角形 sᵘ±</span>
+      <span><i style="background:#7b97d6"></i>下向き三角形 sᵈ±</span>
+      <span><i style="background:#DDAA55"></i>六角形 σ±</span>`;
+  }
+}
+
+function row(k,v,em){ return `<div class="kv ${em?'em':''}"><span>${k}</span><span>${v}</span></div>`; }
+
+function selectEdge(e){
+  hideTip();
+  selected={type:"edge",d:e};
+  const warn=e.boundary_incomplete
+    ? `<div style="background:#fdf0e8;color:#993c1d;border-radius:6px;padding:5px 8px;margin-bottom:6px;font-size:11px;line-height:1.5">⚠ 境界不完全：隣接データが欠けており、この辺の s/σ/J⁺ は近似です。きれいな値が必要なら周辺セルのデータ（余白）を加えてください。</div>`
+    : "";
+  const jStraight=straightPotential(e);
+  const turn=e.J_out-jStraight;
+  const flag=e.is_control_needed?`<span class="pill" style="background:#fdecec;color:#a32d2d">制御必要</span>`
+    :e.is_pre_jam?`<span class="pill" style="background:#faece7;color:#993c1d">制御対象</span>`
+    :`<span class="pill" style="background:#eef;color:#185fa5">通常</span>`;
+  document.getElementById("detailBody").innerHTML=
+    warn+
+    `<div style="margin-bottom:6px"><b>${e.source.type}(${e.source.i-voff},${e.source.j-voff}) → ${e.target.type}(${e.target.i-voff},${e.target.j-voff})</b> ${flag}</div>`+
+    `<div class="hint" style="margin-bottom:6px">road ${e.road}（id: ${e.id}）</div>`+
+    row("観測 J_out", fmt(e.J_out))+
+    row("− 回転成分(右左折)", fmt(turn))+
+    row("= 直進 J⁻", fmt(jStraight),true)+
+    `<div style="height:6px"></div>`+
+    row("ε 入力", fmt(epsOf(e)))+
+    row("β（この道路）", e._beta!=null?e._beta.toFixed(4):"–")+
+    row("jam_score", e.jam_score.toFixed(3),true)+
+    row("P_in / P_out", fmt(e.p_in)+" / "+fmt(e.p_out))+
+    row("蓄積 (P_in−P_out)", fmt(e.accumulation));
+  ctlSelect(e.id);   // 介入状態を整理して再計算・再描画（renderを含む）
+}
+
+function selectFace(kind,f){
+  selected={type:"face",d:f};
+  if(kind==="tri"){
+    document.getElementById("detailBody").innerHTML=
+      `<div style="margin-bottom:6px"><b>三角形 (${f.i-voff},${f.j-voff})</b>（${f.orientation==="up"?"上向き":"下向き"}）</div>`+
+      row("s⁺ 右回り", fmt(f.s_plus))+
+      row("s⁻ 左回り", fmt(f.s_minus))+
+      row("|s⁺−s⁻| 偏り", fmt(Math.abs(f.s_plus-f.s_minus)),true)+
+      `<div class="hint" style="margin-top:6px">s は3頂点 τ の合計。直進ポテンシャルでは s/3 を差し引く。</div>`;
+  } else {
+    document.getElementById("detailBody").innerHTML=
+      `<div style="margin-bottom:6px"><b>六角形 (${f.i-voff},${f.j-voff})</b></div>`+
+      row("σ⁺ 右回り", fmt(f.sigma_plus))+
+      row("σ⁻ 左回り", fmt(f.sigma_minus))+
+      row("|σ⁺−σ⁻| 偏り", fmt(Math.abs(f.sigma_plus-f.sigma_minus)),true)+
+      `<div class="hint" style="margin-top:6px">σ は6頂点 τ の合計。直進ポテンシャルでは σ/6 を差し引く。</div>`;
+  }
+}
+
+// === モデル計算はPython(build_analysis)に一本化。JS側の再実装は削除した。 ===
+// CSV観測データは python src/export_analysis_json.py --csv で analysis.json に変換し、
+// このダッシュボードは「解析JSON」読込で表示する(JSは描画のみ)。
+
+
+
+// ══ 制御シミュレーション（フェーズ1: 単一辺・静的・before/after） ══════════
+// Python(control_simulation.build_control_scenarios)が既定パラメータで事前計算した
+// 「流量の付け替え」シナリオを適用し、jam_score と指標はライブ値(μ・β・τ)で再計算する。
+// モデル計算(分解 J⁺/J⁻)は Python 一本化の契約のまま（JSは表示と再計算のみ）。
+
+function ctlScenario(id){
+  return (DATA && DATA.control && DATA.control.scenarios && id)
+    ? (DATA.control.scenarios[id] || null) : null;
+}
+function jamFromFields(f){                 // 素材値 → ライブ jam（recompute と同一式）
+  const eps = Math.max(0, isFinite(f.J_minus) ? f.J_minus : 0);
+  let be;
+  if(LIVE.betaMethod === "const") be = LIVE.beta;
+  else if(LIVE.betaMethod === "stat") be = LIVE._statBeta || LIVE.beta;
+  else {
+    const phi = (f.J_out > 0 && isFinite(f.J_plus)) ? Math.max(0, Math.min(1, f.J_plus / f.J_out)) : 0;
+    be = LIVE.bmin + (LIVE.bmax - LIVE.bmin) * phi;
+  }
+  return sigmoid01(eps, LIVE.mu, be);
+}
+function ctlLabel(id){
+  const e = EDGE_BY_ID ? EDGE_BY_ID.get(id) : null; if(!e) return id;
+  return e.source.type + "(" + (e.source.i - voff) + "," + (e.source.j - voff) + ")→"
+       + e.target.type + "(" + (e.target.i - voff) + "," + (e.target.j - voff) + ") r" + e.road;
+}
+function ctlUnpatch(){                     // 介入を外して素の流量に戻す
+  if(!CTRL.baseline) return;
+  CTRL.baseline.forEach((b, id) => { const e = EDGE_BY_ID.get(id); if(e) Object.assign(e, b); });
+  CTRL.baseline = null;
+}
+function ctlSelect(id){                    // 辺選択に連動（前の介入は解除）
+  ctlUnpatch();
+  CTRL.edgeId = ctlScenario(id) ? id : null;
+  CTRL.step = 0; CTRL.renderedFor = null;
+  recompute();
+}
+function ctlApplyStep(k){                  // スライダー: step k の流量に差し替え
+  const sc = ctlScenario(CTRL.edgeId); if(!sc) return;
+  ctlUnpatch();
+  CTRL.step = Math.max(0, Math.min(sc.steps.length, k));
+  if(CTRL.step > 0){
+    const st = sc.steps[CTRL.step - 1];
+    const base = new Map();
+    st.changes.forEach(ch => {
+      const e = EDGE_BY_ID.get(ch[0]); if(!e) return;
+      base.set(e.id, {J_out:e.J_out, J_in:e.J_in, J_plus:e.J_plus, J_minus:e.J_minus,
+                      p_in:e.p_in, p_out:e.p_out, accumulation:e.accumulation});
+      e.J_out = ch[1]; e.J_in = ch[1]; e.J_plus = ch[2]; e.J_minus = ch[3];
+      e.p_in = ch[4]; e.p_out = ch[5]; e.accumulation = ch[4] - ch[5];
+    });
+    CTRL.baseline = base;
+  }
+  recompute();
+}
+function ctlMetrics(useBaseline){          // 完全辺の全域指標（Python の measured と同じ範囲）
+  let phi = 0, nPre = 0, nCtrl = 0, mx = 0;
+  DATA.edges.forEach(e => {
+    if(e.boundary_incomplete) return;
+    let jam = e.jam_score, acc = e.accumulation;
+    if(useBaseline && CTRL.baseline && CTRL.baseline.has(e.id)){
+      const b = CTRL.baseline.get(e.id);
+      jam = jamFromFields(b); acc = b.p_in - b.p_out;
+    }
+    if(jam >= LIVE.threshold){ nPre++; phi += jam - LIVE.threshold; if(acc > 0) nCtrl++; }
+    if(jam > mx) mx = jam;
+  });
+  return {phi:phi, nPre:nPre, nCtrl:nCtrl, mx:mx};
+}
+function ctlNewRed(){                      // 介入で新規に赤くなった辺（変更辺のみ差が出る）
+  const out = [];
+  if(!CTRL.baseline) return out;
+  CTRL.baseline.forEach((b, id) => {
+    const e = EDGE_BY_ID.get(id);
+    if(!e || e.boundary_incomplete) return;
+    if(e.jam_score >= LIVE.threshold && jamFromFields(b) < LIVE.threshold) out.push(id);
+  });
+  return out;
+}
+function ctlPlanLive(sc, e){               // 閉形式サイジングをライブ値で再計算（表示用）
+  const tau = LIVE.threshold, ln = Math.log(tau / (1 - tau));
+  const epsStar = b => LIVE.mu + ln / b;
+  const cur = (CTRL.baseline && CTRL.baseline.get(e.id)) || e;   // before基準
+  const beta_e = (CTRL.baseline && CTRL.baseline.has(e.id)) ? null : e._beta;
+  const jamB = (beta_e != null) ? e.jam_score : jamFromFields(cur);
+  const epsB = Math.max(0, isFinite(cur.J_minus) ? cur.J_minus : 0);
+  const betaOf = f => {
+    if(LIVE.betaMethod === "const") return LIVE.beta;
+    if(LIVE.betaMethod === "stat") return LIVE._statBeta || LIVE.beta;
+    const phi = (f.J_out > 0 && isFinite(f.J_plus)) ? Math.max(0, Math.min(1, f.J_plus / f.J_out)) : 0;
+    return LIVE.bmin + (LIVE.bmax - LIVE.bmin) * phi;
+  };
+  const esE = epsStar(betaOf(cur));
+  const dNeed = Math.max(0, epsB - esE + 0.01 * LIVE.mu);
+  const H = id => {
+    if(!id) return 0;
+    const r = EDGE_BY_ID.get(id); if(!r) return 0;
+    const rb = (CTRL.baseline && CTRL.baseline.get(id)) || r;
+    return Math.max(0, epsStar(betaOf(rb)) - Math.max(0, isFinite(rb.J_minus) ? rb.J_minus : 0));
+  };
+  const hR = H(sc.receivers.R), hL = H(sc.receivers.L);
+  const dbsMax = sc.steps.length ? sc.steps[sc.steps.length - 1].dbs : 0;
+  const dbsMin = sc.feeder.flow > 0 ? dNeed / sc.feeder.flow : Infinity;
+  let feas, cls;
+  if(dNeed <= 0){ feas = "現パラメータでは赤くない"; cls = "background:#eef;color:#185fa5"; }
+  else if(dbsMin <= dbsMax && dNeed <= hR + hL){ feas = "解消可能・副作用なし"; cls = "background:#e7f6ee;color:#1d9e75"; }
+  else if(dbsMin <= dbsMax){ feas = "解消可能だが渋滞が移転"; cls = "background:#faece7;color:#993c1d"; }
+  else { feas = "単点では解消不可"; cls = "background:#fdecec;color:#a32d2d"; }
+  return {esE:esE, dNeed:dNeed, hR:hR, hL:hL, dbsMin:dbsMin, dbsMax:dbsMax,
+          feas:feas, cls:cls, jamB:jamB};
+}
+function ctlRow(label, idb, ida){
+  return '<div class="ctl-kv"><span>' + label + '</span>' +
+         '<span><span class="b4" id="' + idb + '">–</span> → <span class="af" id="' + ida + '">–</span></span></div>';
+}
+function updateControlPanel(){
+  const body = document.getElementById("ctlBody"); if(!body || !DATA) return;
+  const has = DATA.control && DATA.control.scenarios && Object.keys(DATA.control.scenarios).length;
+  if(!has){
+    body.innerHTML = '<span class="hint">このデータには制御シナリオがありません。'
+      + 'python src/export_analysis_json.py で再生成してください。</span>';
+    CTRL.renderedFor = null;
+    return;
+  }
+  const sc = ctlScenario(CTRL.edgeId);
+  if(!sc){
+    // 候補リスト（Python が実行可能性ランク順に選んだ辺）
+    let html = '<span class="hint">渋滞診断レイヤーで 🚦 の付いた辺（または下のリスト）を選ぶと、'
+      + '上流交差点で「直進の一部を右左折へ回す」介入を試せます。</span><div class="ctl-list">';
+    Object.keys(DATA.control.scenarios).forEach(id => {
+      const e = EDGE_BY_ID.get(id); if(!e) return;
+      const pl = ctlPlanLive(DATA.control.scenarios[id], e);
+      html += '<div class="ctl-item" data-ctl="' + id + '"><b>' + e.jam_score.toFixed(2) + '</b>'
+        + '<span style="flex:1">' + ctlLabel(id) + '</span>'
+        + '<span class="ctl-pill" style="' + pl.cls + '">' + pl.feas + '</span></div>';
+    });
+    body.innerHTML = html + '</div>';
+    body.querySelectorAll('[data-ctl]').forEach(el => el.addEventListener('click', () => {
+      const e = EDGE_BY_ID.get(el.dataset.ctl); if(e) selectEdge(e);
+    }));
+    CTRL.renderedFor = null;
+    return;
+  }
+  const e = EDGE_BY_ID.get(CTRL.edgeId);
+  if(CTRL.renderedFor !== CTRL.edgeId){
+    body.innerHTML =
+      '<div class="ctl-row"><b>対象: ' + ctlLabel(CTRL.edgeId) + '</b>'
+      + '<span class="ctl-pill" id="ctlFeas">–</span>'
+      + '<button id="ctlResetBtn" style="margin-left:auto">介入解除</button></div>'
+      + '<div class="hint" id="ctlSizing" style="margin-bottom:4px">–</div>'
+      + '<div class="prm" style="margin:6px 0 2px">'
+      + '<div class="prm-top"><span>規制量 Δβ_S（直進をどれだけ曲げるか）</span>'
+      + '<span class="prm-v" id="ctlDbs">介入なし</span></div>'
+      + '<input type="range" id="ctlSlider" min="0" max="' + sc.steps.length + '" step="1" value="0">'
+      + '<div class="prm-note" id="ctlNote"></div></div>'
+      + ctlRow('対象辺 jam_score', 'ctlJamB', 'ctlJamA')
+      + ctlRow('Φ_τ 超過リスク(全域)', 'ctlPhiB', 'ctlPhiA')
+      + ctlRow('制御対象数', 'ctlPreB', 'ctlPreA')
+      + ctlRow('制御必要数', 'ctlCtB', 'ctlCtA')
+      + ctlRow('最大 jam_score', 'ctlMxB', 'ctlMxA')
+      + '<div id="ctlMsg" style="margin-top:6px;font-size:11.5px"></div>'
+      + '<div class="hint" style="margin-top:5px">流量の付け替えは既定パラメータで事前計算(分配 '
+      + (DATA.control.meta ? DATA.control.meta.dist : 'D2') + '=安全余裕比例・保存則保持)。'
+      + 'jam と指標はライブ値で再計算。指標は境界不完全を除く全域。</div>';
+    document.getElementById('ctlSlider').addEventListener('input', ev => ctlApplyStep(+ev.target.value));
+    document.getElementById('ctlResetBtn').addEventListener('click', () => ctlApplyStep(0));
+    CTRL.renderedFor = CTRL.edgeId;
+  }
+  // ── 値の更新（スライダー操作中に skeleton を壊さない） ──
+  const pl = ctlPlanLive(sc, e);
+  const feasEl = document.getElementById('ctlFeas');
+  feasEl.textContent = pl.feas; feasEl.style.cssText = pl.cls;
+  document.getElementById('ctlSizing').innerHTML =
+    '流入 J_r=' + fmt(sc.feeder.flow) + '（β_S ' + sc.feeder.beta_S.toFixed(2) + '）'
+    + ' ｜ 安全ライン ε*=' + fmt(pl.esE) + ' ｜ δ_need=' + fmt(pl.dNeed)
+    + ' ｜ δ_safe=' + fmt(pl.hR + pl.hL)
+    + '（受け皿 R:' + (sc.receivers.R ? ctlLabel(sc.receivers.R) : 'なし') + ' H=' + fmt(pl.hR)
+    + ' / L:' + (sc.receivers.L ? ctlLabel(sc.receivers.L) : 'なし') + ' H=' + fmt(pl.hL) + '）';
+  const sl = document.getElementById('ctlSlider');
+  if(document.activeElement !== sl && +sl.value !== CTRL.step) sl.value = CTRL.step;
+  const st = CTRL.step > 0 ? sc.steps[CTRL.step - 1] : null;
+  document.getElementById('ctlDbs').textContent =
+    st ? ('Δβ_S=' + st.dbs.toFixed(3) + '（δ=' + fmt(st.delta) + '）') : '介入なし';
+  // 解消に必要な最小ステップ（ライブ値で判定）
+  let needK = null;
+  for(let k = 0; k < sc.steps.length; k++){
+    const ch = sc.steps[k].changes.find(c => c[0] === CTRL.edgeId);
+    if(ch && jamFromFields({J_out:ch[1], J_plus:ch[2], J_minus:ch[3]}) < LIVE.threshold){ needK = k + 1; break; }
+  }
+  document.getElementById('ctlNote').textContent = st
+    ? ('分配 R ' + Math.round(st.w_r * 100) + '% / L ' + Math.round(st.w_l * 100) + '%'
+       + (st.negative_flows ? ' ｜ ⚠ 負の流量 ' + st.negative_flows + '件（規制過大の兆候）' : '')
+       + (st.converged ? '' : ' ｜ ⚠ 伝播が未収束'))
+    : (needK ? ('解消の目安: step ' + needK + '（Δβ_S=' + sc.steps[needK - 1].dbs.toFixed(3) + '）')
+             : 'このシナリオ範囲では解消不可（現パラメータ）');
+  const mb = ctlMetrics(true), ma = ctlMetrics(false);
+  const jamA = e.jam_score;
+  const put = (id, v) => { document.getElementById(id).textContent = v; };
+  put('ctlJamB', pl.jamB.toFixed(3)); put('ctlJamA', jamA.toFixed(3));
+  put('ctlPhiB', mb.phi.toFixed(2));  put('ctlPhiA', ma.phi.toFixed(2));
+  put('ctlPreB', mb.nPre);            put('ctlPreA', ma.nPre);
+  put('ctlCtB', mb.nCtrl);            put('ctlCtA', ma.nCtrl);
+  put('ctlMxB', mb.mx.toFixed(3));    put('ctlMxA', ma.mx.toFixed(3));
+  ['ctlJamA','ctlPhiA','ctlPreA','ctlCtA','ctlMxA'].forEach((id, i) => {
+    const a = [jamA, ma.phi, ma.nPre, ma.nCtrl, ma.mx][i];
+    const b = [pl.jamB, mb.phi, mb.nPre, mb.nCtrl, mb.mx][i];
+    const el = document.getElementById(id);
+    el.className = 'af ' + (a < b - 1e-9 ? 'ctl-good' : (a > b + 1e-9 ? 'ctl-bad' : ''));
+  });
+  const msg = document.getElementById('ctlMsg');
+  if(!st){ msg.innerHTML = '<span class="hint">スライダーで規制量を選ぶと before/after を表示します。</span>'; }
+  else {
+    const resolved = jamA < LIVE.threshold;
+    const newRed = ctlNewRed();
+    const ok = resolved && ma.nPre <= mb.nPre && newRed.length === 0;
+    msg.innerHTML =
+      (resolved ? '<b class="ctl-good">✅ 対象辺は解消</b>' : '<b class="ctl-bad">❌ 対象辺は未解消</b>')
+      + (newRed.length ? ' ｜ <b class="ctl-bad">⚠ 渋滞の移転: 新規赤 ' + newRed.length + '本</b>'
+                         + '<span class="hint">（' + newRed.map(ctlLabel).join('、') + '）</span>'
+                       : ' ｜ 新規赤なし')
+      + '<br>' + (ok ? '<b class="ctl-good">成功判定 G: 成功</b>'
+                     : '<b class="ctl-bad">成功判定 G: 失敗</b>')
+      + '<span class="hint">（e解消 かつ 制御対象数 非増加 かつ 新規赤なし）</span>';
+  }
+}
+
+function setFileStatus(text){
+  document.getElementById("fileStatus").textContent=text;
+}
+
+function updateDataSourceUI(){
+  const mode=document.getElementById("dataSourceSelect").value;
+  const input=document.getElementById("fileInput");
+  pendingJsonData=null; pendingCsvData=null; pendingXlsxData=null; input.value="";
+  input.disabled=mode==="dummy"||mode==="verify";
+  if(mode==="xlsx"){
+    input.accept=".xlsx";
+    document.getElementById("fileLabel").textContent="観測Excel読込";
+    document.getElementById("srcInfo").textContent="観測Excel 未選択";
+    setFileStatus("Excel(.xlsx)を選び『実行』。表示範囲と同名シート(例 3x3)を読みます。サーバ起動が必要");
+  } else if(mode==="csv"){
+    input.accept=".csv,text/csv";
+    document.getElementById("fileLabel").textContent="観測CSV読込";
+    document.getElementById("srcInfo").textContent="観測CSV 未選択";
+    setFileStatus("CSVを選び『実行』。ローカルサーバ(python src/server.py)経由でPythonが解析します");
+  } else if(mode==="json"){
+    input.accept=".json,application/json";
+    document.getElementById("fileLabel").textContent="解析JSON読込";
+    document.getElementById("srcInfo").textContent="解析JSON 未選択";
+    setFileStatus("Pythonで生成した analysis.json を選択してください");
+  } else if(mode==="verify"){
+    document.getElementById("fileLabel").textContent="ファイル読込";
+    document.getElementById("srcInfo").textContent="検証データ";
+    setFileStatus("インデックス監査と同一の仮データ（seed=1, 5×5）。『実行』で表示");
+  } else {
+    input.accept=".json,application/json";
+    document.getElementById("fileLabel").textContent="ファイル読込";
+    document.getElementById("srcInfo").textContent="サンプル";
+    setFileStatus("サンプル使用中");
+  }
+}
+
+document.querySelectorAll(".lyr").forEach(el=>el.addEventListener("click",()=>{
+  layer=el.dataset.layer; render();
+}));
+document.getElementById("gridSelect").addEventListener("change",()=>{
+  const want=parseInt(document.getElementById("gridSelect").value)||3;
+  const mx=DATA?((DATA.meta.view&&DATA.meta.view.max)||DATA.meta.cols):want;
+  viewN=Math.min(want,mx);
+  if(DATA) render();
+});
+document.getElementById("runBtn").addEventListener("click",()=>{
+  const mode=document.getElementById("dataSourceSelect").value;
+  if(mode==="xlsx"){
+    if(!pendingXlsxData){alert("観測Excelを選択してください。"); return;}
+    const sheet=document.getElementById("gridSelect").value;
+    setFileStatus("Python解析中…(Excel)");
+    fetch("/api/analyze_xlsx?sheet="+encodeURIComponent(sheet),
+      {method:"POST",headers:{"Content-Type":"application/octet-stream"},body:pendingXlsxData.buffer})
+      .then(res=>res.json().then(j=>({ok:res.ok,j})))
+      .then(({ok,j})=>{
+        if(!ok){ setFileStatus("Excel解析エラー"); alert("Excel解析エラー: "+(j.error||"不明")); return; }
+        selected=null;
+        viewN=Math.min(viewN, (j.meta.view&&j.meta.view.max)||j.meta.cols);
+        document.getElementById("srcInfo").textContent=pendingXlsxData.name+"（Excel実行）";
+        setFileStatus("Excelから解析: "+j.edges.length.toLocaleString()+" edges");
+        loadData(j);
+      })
+      .catch(()=>{ setFileStatus("サーバ未起動?"); alert("ローカルサーバに接続できません。\npython src/server.py を起動し、http://127.0.0.1:8000/ から開いてください。"); });
+    return;
+  }
+  if(mode==="csv"){
+    if(!pendingCsvData){alert("観測CSVを選択してください。"); return;}
+    setFileStatus("Python解析中…");
+    fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"text/csv"},body:pendingCsvData.text})
+      .then(res=>res.json().then(j=>({ok:res.ok,j})))
+      .then(({ok,j})=>{
+        if(!ok){ setFileStatus("CSV解析エラー"); alert("CSV解析エラー: "+(j.error||"不明")); return; }
+        selected=null;
+        viewN=Math.min(viewN, j.meta.cols);
+        document.getElementById("srcInfo").textContent=pendingCsvData.name+"（CSV実行）";
+        setFileStatus("CSVから解析: "+j.edges.length.toLocaleString()+" edges");
+        loadData(j);
+      })
+      .catch(()=>{ setFileStatus("サーバ未起動?"); alert("ローカルサーバに接続できません。\npython src/server.py を起動し、http://127.0.0.1:8000/ から開いてください。"); });
+    return;
+  }
+  if(mode==="json"){
+    if(!pendingJsonData){alert("解析JSONを選択してください。"); return;}
+    document.getElementById("srcInfo").textContent=pendingJsonData.name;
+    loadData(pendingJsonData.data);
+    return;
+  }
+  if(mode==="verify"){
+    const v=window.ANALYSIS_VERIFY;
+    if(!v){ alert("検証データ(data_verify.js)が見つかりません。"); return; }
+    const mmax=(v.meta.view&&v.meta.view.max)||v.meta.cols;
+    viewN=Math.min(parseInt(document.getElementById("gridSelect").value)||3, mmax);
+    document.getElementById("srcInfo").textContent="検証データ（seed=1 / "+v.meta.cols+"×"+v.meta.rows+"）";
+    setFileStatus("インデックス監査と同一の仮データを表示中");
+    selected=null;
+    loadData(v);
+    return;
+  }
+  const master=window.ANALYSIS_MASTER||window.ANALYSIS;
+  if(master){
+    const mmax=(master.meta.view&&master.meta.view.max)||master.meta.cols;
+    viewN=Math.min(parseInt(document.getElementById("gridSelect").value)||3, mmax);
+    document.getElementById("srcInfo").textContent="サンプル（きれい表示"+viewN+"×"+viewN+" / 余白込み計算）";
+    loadData(master);
+  } else {
+    alert("マスターデータがありません。\nexport_analysis_json.py --master 5 で再生成してください。");
+  }
+});
+document.getElementById("dataSourceSelect").addEventListener("change",updateDataSourceUI);
+document.getElementById("fileInput").addEventListener("change",ev=>{
+  const f=ev.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  const mode=document.getElementById("dataSourceSelect").value;
+  if(mode==="xlsx"){
+    r.onload=()=>{
+      pendingXlsxData={name:f.name,buffer:r.result};
+      document.getElementById("srcInfo").textContent=f.name+"（Excel選択）";
+      setFileStatus("Excel選択済み。『実行』でPython解析");
+    };
+    r.readAsArrayBuffer(f);
+    return;
+  }
+  r.onload=()=>{
+    if(mode==="csv"){
+      pendingCsvData={name:f.name,text:r.result};
+      document.getElementById("srcInfo").textContent=f.name+"（CSV選択）";
+      setFileStatus("CSV選択済み。『実行』でPython解析");
+      return;
+    }
+    try{
+      pendingJsonData={name:f.name,data:JSON.parse(r.result)};
+      document.getElementById("srcInfo").textContent=f.name+"（JSON選択）";
+      setFileStatus("解析JSONを選択済み");
+    }
+    catch(err){pendingJsonData=null; alert("JSON読込失敗: "+err);}
+  };
+  r.readAsText(f);
+});
+document.getElementById("reloadBtn").addEventListener("click",()=>location.reload());
+updateDataSourceUI();
+wireParams();
+
+// データ取得: window.ANALYSIS(data.js) → fetch(../data/analysis.json) の順
+function boot(){
+  if(window.ANALYSIS){
+    const m=window.ANALYSIS.meta;
+    const mmax=(m.view&&m.view.max)||m.cols;
+    viewN=Math.min(viewN,mmax);
+    loadData(window.ANALYSIS);
+    document.getElementById("srcInfo").textContent="サンプル（きれい表示"+viewN+"×"+viewN+" / 余白込み計算）";
+    return;
+  }
+  fetch("../data/analysis.json").then(r=>r.json())
+    .then(d=>{loadData(d);document.getElementById("srcInfo").textContent="サンプル";})
+    .catch(()=>{document.getElementById("detailBody").innerHTML=
+      '<div class="hint">データ未読込。<br>上の「JSON読込」から analysis.json を選ぶか、data.js を同梱してください。</div>';});
+}
+boot();
+</script>
+</body>
+</html>

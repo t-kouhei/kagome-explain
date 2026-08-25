@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カゴメ格子 交通解析 — 内部計算の説明</title>
+<style>
+  :root{
+    --paper:#fffdf8; --bg:#e7e3da; --ink:#1f2024; --sub:#54565f; --faint:#8d8f98;
+    --rule:#14161c; --hair:#e0ddd3; --tint:#f6f3ec;
+    --j:#1f5fae; --rot:#5a4aa8; --str:#1d7a55; --jam:#b5531f;
+    --jbg:#eef3fb; --rotbg:#f1effb; --strbg:#ecf6f0; --jambg:#fbf1e9;
+    --serif:"Yu Mincho","YuMincho","Hiragino Mincho ProN","Noto Serif JP",Georgia,"Times New Roman",serif;
+    --gothic:"Yu Gothic UI","Yu Gothic","Meiryo","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    --math:"Cambria Math","Latin Modern Math",Georgia,"Times New Roman",serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:var(--serif);font-size:16.5px;line-height:1.95;
+       text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}
+
+  /* running header */
+  .runhead{position:sticky;top:0;z-index:20;background:rgba(231,227,218,.92);
+           backdrop-filter:blur(6px);border-bottom:1px solid #d3cfc4}
+  .runhead .in{max-width:860px;margin:0 auto;padding:7px 32px;display:flex;gap:4px;
+               flex-wrap:wrap;font-family:var(--gothic);font-size:11.5px}
+  .runhead a{color:var(--sub);text-decoration:none;padding:3px 9px;border-radius:3px}
+  .runhead a:hover{color:var(--ink);background:#dcd8cd}
+
+  .sheet{max-width:860px;margin:26px auto 70px;background:var(--paper);
+         border:1px solid #ded9ce;box-shadow:0 1px 0 #fff inset,0 6px 26px rgba(40,36,28,.10);
+         padding:60px 72px 72px}
+
+  /* title block */
+  .title{text-align:center;border-bottom:2.5px solid var(--rule);padding-bottom:26px;margin-bottom:14px}
+  .title .eyebrow{font-family:var(--gothic);font-size:12px;letter-spacing:.32em;
+                  color:var(--faint);margin:0 0 14px}
+  .title h1{font-family:var(--gothic);font-weight:700;font-size:28px;line-height:1.45;margin:0 0 14px}
+  .title p{color:var(--sub);font-size:14.5px;line-height:1.85;margin:0 auto;max-width:34em}
+
+  /* pipeline strip */
+  .pipe{font-family:var(--gothic);font-size:12.5px;color:var(--sub);text-align:center;
+        margin:22px auto 4px;line-height:2.1}
+  .pipe b{color:var(--ink)} .pipe .arr{color:#bdb9ad;margin:0 5px}
+  .leadnote{font-family:var(--gothic);font-size:12px;color:var(--faint);
+            text-align:center;max-width:42em;margin:8px auto 0;line-height:1.85}
+
+  /* chapter */
+  .chap{padding-top:42px;margin-top:42px;border-top:1px solid var(--hair)}
+  .chap:first-of-type{border-top:none}
+  .kicker{font-family:var(--gothic);font-size:11.5px;letter-spacing:.26em;
+          color:var(--c,var(--accent));margin:0 0 6px}
+  h2{font-family:var(--gothic);font-weight:700;font-size:22px;line-height:1.4;
+     margin:0 0 6px;display:flex;align-items:baseline;gap:13px}
+  h2 .cn{flex:none;font-family:var(--math);font-size:30px;font-weight:400;
+         color:var(--c,var(--ink));line-height:1;width:1.1em;text-align:right;font-style:italic}
+  .lead{font-family:var(--gothic);color:var(--sub);font-size:13.5px;line-height:1.8;
+        margin:0 0 18px;padding-left:1px}
+  h3{font-family:var(--gothic);font-weight:700;font-size:16px;line-height:1.45;
+     margin:30px 0 6px;color:var(--c,var(--ink))}
+  p{margin:14px 0}
+  b{font-weight:700}
+  code{font-family:var(--gothic);background:#f0ede4;padding:1px 6px;border-radius:3px;
+       font-size:13px;color:#3a3c44}
+
+  /* formula */
+  .formula{position:relative;font-family:var(--math);font-size:20px;text-align:center;
+           background:var(--tint);border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);
+           padding:18px 56px;margin:22px 0}
+  .formula .eqno{position:absolute;right:16px;top:50%;transform:translateY(-50%);
+                 font-family:var(--gothic);font-size:11px;color:var(--faint);font-style:normal}
+  .frac{display:inline-flex;flex-direction:column;text-align:center;vertical-align:middle;margin:0 .2em}
+  .frac>span:first-child{border-bottom:1.4px solid currentColor;padding:0 .45em}
+  .frac>span:last-child{padding:3px .45em 0}
+  .op{margin:0 .3em;color:#444}
+
+  /* booktabs tables */
+  .cap{font-family:var(--gothic);font-size:12px;color:var(--sub);margin:24px 0 7px;
+       padding-left:2px}
+  .cap b{color:var(--ink);margin-right:8px}
+  table{border-collapse:collapse;width:100%;font-family:var(--gothic);font-size:13px;
+        border-top:2px solid var(--rule);border-bottom:2px solid var(--rule)}
+  thead th{border-bottom:1.4px solid var(--rule);font-weight:700;color:#2a2c33}
+  th,td{padding:8px 10px;text-align:center;vertical-align:middle}
+  td.l,th.l{text-align:left}
+  .mini{font-weight:400;color:var(--faint);font-size:10.5px}
+  tbody tr+tr td{border-top:1px solid #eceae2}
+  tr.grp td{border-top:1.3px solid #cfccc2}
+  table b{color:#1b1d23}
+
+  /* worked example */
+  .ex{font-family:var(--gothic);font-size:13.5px;line-height:1.85;
+      background:var(--exbg,var(--tint));border-left:3px solid var(--c,#999);
+      border-radius:0 6px 6px 0;padding:13px 16px;margin:20px 0}
+  .ex .lab{font-weight:700;color:var(--c,#333);font-size:12px;letter-spacing:.04em;
+           display:block;margin-bottom:3px}
+  .ex .calc{font-family:var(--math);font-size:16px;margin:6px 0 2px;line-height:1.7}
+  .ex .small{font-size:12px;color:var(--sub);margin-top:6px}
+
+  /* note / definition */
+  .note{font-family:var(--gothic);font-size:12.5px;line-height:1.85;color:var(--sub);
+        background:#faf8f2;border:1px solid var(--hair);border-radius:6px;padding:12px 15px;margin:18px 0}
+  .note .lab{font-weight:700;color:#46484f;margin-right:7px}
+
+  /* figure */
+  figure{margin:18px 0 6px}
+  canvas{width:100%;max-width:600px;display:block;margin:0 auto;background:#fff;
+         border:1px solid var(--hair);border-radius:6px}
+  figcaption{font-family:var(--gothic);font-size:12px;color:var(--sub);text-align:center;margin-top:9px}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--gothic);font-size:11.5px;
+          color:var(--sub);justify-content:center;margin-top:6px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:5px}
+  .ctl{display:flex;gap:30px;flex-wrap:wrap;align-items:center;justify-content:center;
+       font-family:var(--gothic);margin:8px 0 14px}
+  .ctl label{font-size:12.5px;display:flex;flex-direction:column;gap:4px;min-width:240px}
+  .ctl input[type=range]{width:240px;accent-color:var(--jam)}
+  .ctl .val{font-weight:700;color:var(--jam)}
+  .ctl input[type=range]:disabled{opacity:.45}
+  .panel{font-family:var(--gothic);background:#fbf9f4;border:1px solid var(--hair);
+         border-radius:8px;padding:15px 18px;margin:18px 0}
+  .panel .row{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .panel select{font-family:var(--gothic);font-size:13px;padding:6px 10px;border:1px solid #cfccc2;
+                border-radius:6px;background:#fff;color:var(--ink);min-width:240px}
+  .panel .pl{font-size:11.5px;color:var(--faint);font-weight:700;letter-spacing:.04em}
+  .chk{font-size:12px;color:var(--sub);display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+  .chk input{accent-color:var(--jam)}
+  .readout{font-size:13px;margin-top:12px;padding:10px 13px;background:#fff;
+           border:1px solid var(--hair);border-radius:6px;line-height:2}
+  .readout .k{color:var(--faint);font-size:10.5px;margin:0 3px 0 12px}
+  .readout .k:first-child{margin-left:0}
+  .readout b{color:var(--ink)}
+  .badge{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 11px;border-radius:11px;color:#fff;margin-left:6px}
+  .badge.free{background:#3f8f5f} .badge.pre{background:#b5531f}
+
+  @media(max-width:680px){
+    .sheet{padding:38px 22px 50px;margin:0}
+    .formula{padding:16px 18px;font-size:17px}
+    .runhead .in{padding:7px 16px}
+  }
+</style>
+</head>
+<body>
+
+<div class="runhead"><div class="in">
+  <a href="#s1">1 入力データ</a>
+  <a href="#s2">2 正規化交通量</a>
+  <a href="#s3">3 局所回転 τ</a>
+  <a href="#s4">4 回転量 s・σ</a>
+  <a href="#s5">5 直進ポテンシャル</a>
+  <a href="#s6">6 未病スコア</a>
+  <a href="#s7">7 パラメータ</a>
+</div></div>
+
+<div class="sheet">
+
+  <div class="title">
+    <p class="eyebrow">KAGOME LATTICE — TRAFFIC ANALYSIS</p>
+    <h1>カゴメ格子 交通解析<br>内部計算の説明</h1>
+    <p>観測した交通量を「直進」と「右左折（回転）」に分け、渋滞の未病を判定するまでの内部処理を、実データの数値を一段ずつ追いながら説明します。</p>
+  </div>
+
+  <p class="pipe">
+    <b>入力</b><span class="arr">→</span><b>J</b>（正規化交通量）<span class="arr">→</span>
+    <b>τ</b>（局所回転）<span class="arr">→</span><b>s・σ</b>（回転量）<span class="arr">→</span>
+    <b>J⁺/J⁻</b>（直進ポテンシャル）<span class="arr">→</span><b>未病スコア</b>
+  </p>
+  <p class="leadnote">本書の数値はすべて、確定版の参照表で計算した実データ（seed=1, 5×5格子, 内側セル）です。各章は前章の出力を用います。表示値は小数2桁に丸めているため、丸めた途中値だけで再計算すると末尾がわずかにずれることがあります。</p>
+
+  <!-- 1 -->
+  <section id="s1" class="chap" style="--c:var(--j)">
+    <p class="kicker">第 1 章</p>
+    <h2><span class="cn">1</span>入力データ</h2>
+    <p class="lead">1 行＝1 有向道路。各道路に「台数・速度・道路長・車線数・曲がり方」が入っています。</p>
+    <p>入力は道路ごとの観測値です。<code>i, j</code> は格子座標、<code>road</code> は道路番号（1〜6）。代表として 4 行を抜き出します。</p>
+
+    <p class="cap"><b>表 1</b>　入力データの抜粋（1 行＝1 有向道路）</p>
+    <table>
+      <thead><tr>
+        <th class="l">道路</th><th>n<br><span class="mini">台数</span></th><th>v<br><span class="mini">速度 km/h</span></th>
+        <th>L<br><span class="mini">道路長 km</span></th><th>m<br><span class="mini">車線</span></th>
+        <th>β<sub>R</sub><br><span class="mini">右折率</span></th><th>β<sub>L</sub><br><span class="mini">左折率</span></th>
+        <th>β<sub>S</sub><br><span class="mini">直進率</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="l">C(2,2) road1</td><td>110</td><td>29.87</td><td>1.108</td><td>3</td><td>0.173</td><td>0.310</td><td>0.517</td></tr>
+        <tr><td class="l">C(2,2) road6</td><td>80</td><td>42.02</td><td>1.582</td><td>1</td><td>0.056</td><td>0.456</td><td>0.487</td></tr>
+        <tr><td class="l">E(2,2) road5</td><td>40</td><td>23.00</td><td>1.533</td><td>3</td><td>0.140</td><td>0.252</td><td>0.607</td></tr>
+        <tr><td class="l">D(2,2) road2</td><td>51</td><td>56.18</td><td>1.674</td><td>1</td><td>0.272</td><td>0.138</td><td>0.590</td></tr>
+      </tbody>
+    </table>
+
+    <p>各記号の意味は、<b>n</b>＝その道路にいる車両台数、<b>v</b>＝平均速度、<b>L</b>＝道路長、<b>m</b>＝車線数、<b>β<sub>R</sub>／β<sub>L</sub>／β<sub>S</sub></b>＝右折・左折・直進の割合（合計 1）。これらが各道路の「素材」で、以降のすべての量はここから組み立てます。</p>
+    <div class="note"><span class="lab">入力の制約</span>右折率・左折率・直進率は <code>β<sub>R</sub>+β<sub>L</sub>+β<sub>S</sub>=1</code>。道路長 <code>L&gt;0</code>、車線 <code>m≥1</code>、台数 <code>n≥0</code> を満たす必要があります（満たさない入力は読み込み時に弾かれます）。</div>
+  </section>
+
+  <!-- 2 -->
+  <section id="s2" class="chap" style="--c:var(--j);--exbg:var(--jbg)">
+    <p class="kicker">第 2 章</p>
+    <h2><span class="cn">2</span>正規化交通量 J</h2>
+    <p class="lead">入力の n・v・L・m を、ひとつの「混み具合」にまとめる最初の計算。</p>
+    <p>まず各道路の交通量を、車線と道路長で正規化した<b>正規化交通量 J</b> にします。台数や速度が大きいほど濃く、車線が多い・道路が長いほど薄まる指標です。</p>
+
+    <div class="formula"><span class="eqno">(2.1)</span>
+      J <span class="op">=</span> <span class="frac"><span>n · v</span><span>m · L</span></span>
+    </div>
+
+    <p>これは「1 車線あたりの流量（台/時/車線）」に当たります（<code>n/L</code>＝密度、<code>×v</code>＝流量、<code>÷m</code>＝1 車線あたり）。表 1 の各行に当てはめると次のようになります。</p>
+    <div class="ex">
+      <span class="lab">例</span><b>C(2,2) road1</b>
+      <div class="calc">J = <span class="frac" style="font-size:13px"><span>110 · 29.87</span><span>3 · 1.108</span></span> ≈ <b>988.48</b></div>
+      <div class="small">同様に road6 → 2124.91、E(2,2) road5 → 200.04、D(2,2) road2 → 1711.58。</div>
+    </div>
+    <p>以降の計算は、この J（と β・L・m）だけを使って進みます。</p>
+  </section>
+
+  <!-- 3 -->
+  <section id="s3" class="chap" style="--c:var(--rot);--exbg:var(--rotbg)">
+    <p class="kicker">第 3 章</p>
+    <h2><span class="cn">3</span>局所回転 τ</h2>
+    <p class="lead">交差点で「曲がって出ていく流れ」を、出口道路の容量で正規化した量。</p>
+    <p>各交差点では、ある道路から流入した交通 J<sub>in</sub> のうち、割合 β だけが右（または左）に曲がって別の道路へ抜けます。その曲がる流れを、出口道路の容量（車線 × 長さ）で割ったものが<b>局所回転 τ</b> です。</p>
+
+    <div class="formula"><span class="eqno">(3.1)</span>
+      τ <span class="op">=</span> <span class="frac"><span>J<sub>in</sub> · β<sub>turn</sub> · L<sub>in</sub></span><span>m<sub>out</sub> · L<sub>out</sub></span></span>
+    </div>
+
+    <p>分子は<b>流入元</b>の道路（入ってくる流量 J<sub>in</sub>・曲がる割合 β・その道路長 L<sub>in</sub>）、分母は<b>受け入れ先</b>の道路の容量（車線数 m<sub>out</sub>・道路長 L<sub>out</sub>）。曲がった先がどれだけ受け止められるかで割ります。<code>turn</code> は右（R）か左（L）。</p>
+    <div class="ex">
+      <span class="lab">例</span><b>C(2,2) で road1 から入って左折（road3 へ抜ける）</b>
+      <div class="calc">τ<sub>L</sub> = <span class="frac" style="font-size:13px"><span>1361.63 · 0.31 · 1.108</span><span>3 · 1.847</span></span> ≈ <b>84.53</b></div>
+      <div class="small">J<sub>in</sub>=1361.63（road1 の流入）、β<sub>L</sub>=0.31、L<sub>in</sub>=1.108、出口 road3 は m=3・L=1.847。</div>
+    </div>
+    <p>このように、各交差点・各「入 → 出」の組み合わせごとに τ が計算されます。どの組み合わせを使うかは、三角形・六角形ごとの対応表 <code>TURN_MAP</code> で決まっています。</p>
+  </section>
+
+  <!-- 4 -->
+  <section id="s4" class="chap" style="--c:var(--rot);--exbg:var(--rotbg)">
+    <p class="kicker">第 4 章</p>
+    <h2><span class="cn">4</span>回転量 s・σ</h2>
+    <p class="lead">τ をループ一周ぶん足し合わせると、その界隈の「渦の強さ」になります。</p>
+    <p>τ は 1 交差点の局所的な曲がりですが、それを<b>三角形（小ループ）</b>や<b>六角形（大ループ）</b>の頂点ぶん足し合わせると、その界隈の「回転（渦）の強さ」になります。<code>+</code> は右回り（τ<sub>R</sub> を合計）、<code>−</code> は左回り（τ<sub>L</sub> を合計）。</p>
+
+    <div class="formula"><span class="eqno">(4.1)</span>
+      s<sup>u±</sup>(i,j) <span class="op">=</span> Σ<sub>3 頂点</sub> τ<sub>R/L</sub>
+      <span style="margin:0 18px;color:#bbb">｜</span>
+      σ<sup>±</sup>(i,j) <span class="op">=</span> Σ<sub>6 頂点</sub> τ<sub>R/L</sub>
+    </div>
+
+    <div class="ex">
+      <span class="lab">例</span><b>上向き三角形 s<sup>u−</sup>(2,2)（左回り）＝ 3 頂点の τ<sub>L</sub> の和</b>
+      <div class="calc">84.53 <span class="op">+</span> 161.85 <span class="op">+</span> 91.76 = <b>338.14</b></div>
+      <div class="small">それぞれ C(2,2)・E(2,1)・D(3,1) の τ<sub>L</sub>。</div>
+      <div class="calc" style="margin-top:10px"><b>六角形 σ<sup>+</sup>(2,2)（右回り）＝ 6 頂点の τ<sub>R</sub> の和</b></div>
+      <div class="calc">164.75 + 339.11 + 98.63 + 102.87 + 37.19 + 251.12 = <b>993.67</b></div>
+    </div>
+    <p>三角形は 3 頂点なので <code>s/3</code>、六角形は 6 頂点なので <code>σ/6</code> が「1 道路ぶんの分け前」になります（次章で使います）。</p>
+  </section>
+
+  <!-- 5 -->
+  <section id="s5" class="chap" style="--c:var(--str);--exbg:var(--strbg)">
+    <p class="kicker">第 5 章</p>
+    <h2><span class="cn">5</span>直進ポテンシャル J⁺ / J⁻</h2>
+    <p class="lead">観測流量から「曲がり（渦）」を引くと、純粋な「素通り需要」が残ります。本解析の主役。</p>
+    <p>観測した流入 J<sub>in</sub> には「まっすぐ」と「曲がり（渦）」が混ざっています。回転量の分け前 <code>s/3</code>・<code>σ/6</code> を引いて残るのが<b>直進ポテンシャル</b>です。</p>
+
+    <div class="formula"><span class="eqno">(5.1)</span>
+      J⁺ <span class="op">=</span> J<sub>in</sub> <span class="op">−</span> <span class="frac"><span>s</span><span>3</span></span> <span class="op">−</span> <span class="frac"><span>σ</span><span>6</span></span>
+    </div>
+
+    <p><b>どの s・どの σ を引くか</b>は、道路ごとに決まった<b>参照表</b>に従います。要点は「<b>流入辺に接する三角形と六角形</b>」を引くこと（右回り・左回りで符号が逆になる）。表 2 が確定版です（先生のスライドと、幾何・参照バランスの両方で検証済み）。</p>
+
+    <p class="cap"><b>表 2</b>　直進ポテンシャルの参照表（確定版）</p>
+    <table>
+      <thead><tr><th>交差点</th><th>road</th><th>引く s（/3）</th><th>引く σ（/6）</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="4"><b>C(i,j)</b></td><td>1</td><td>s<sub>u</sub>⁻(i,j)</td><td>σ⁺(i,j)</td></tr>
+        <tr><td>3</td><td>s<sub>d</sub>⁺(i,j)</td><td>σ⁻(i,j)</td></tr>
+        <tr><td>4</td><td>s<sub>d</sub>⁻(i,j)</td><td>σ⁺(i+1,j)</td></tr>
+        <tr><td>6</td><td>s<sub>u</sub>⁺(i,j)</td><td>σ⁻(i+1,j)</td></tr>
+        <tr class="grp"><td rowspan="4"><b>D(i,j)</b></td><td>2</td><td>s<sub>u</sub>⁺(i−1,j+1)</td><td>σ⁻(i,j)</td></tr>
+        <tr><td>3</td><td>s<sub>u</sub>⁻(i−1,j+1)</td><td>σ⁺(i,j+1)</td></tr>
+        <tr><td>5</td><td>s<sub>d</sub>⁺(i,j)</td><td>σ⁻(i,j+1)</td></tr>
+        <tr><td>6</td><td>s<sub>d</sub>⁻(i,j)</td><td>σ⁺(i,j)</td></tr>
+        <tr class="grp"><td rowspan="4"><b>E(i,j)</b></td><td>1</td><td>s<sub>d</sub>⁺(i,j)</td><td>σ⁻(i+1,j)</td></tr>
+        <tr><td>2</td><td>s<sub>d</sub>⁻(i,j)</td><td>σ⁺(i,j+1)</td></tr>
+        <tr><td>4</td><td>s<sub>u</sub>⁺(i,j+1)</td><td>σ⁻(i,j+1)</td></tr>
+        <tr><td>5</td><td>s<sub>u</sub>⁻(i,j+1)</td><td>σ⁺(i+1,j)</td></tr>
+      </tbody>
+    </table>
+    <p style="font-family:var(--gothic);font-size:11.5px;color:var(--faint);margin-top:8px">表記：s<sub>u</sub>＝上向き三角形、s<sub>d</sub>＝下向き三角形、⁺＝右回り、⁻＝左回り。<code>(i+1,j)</code> 等は隣セルを指すオフセット。</p>
+
+    <div class="ex">
+      <span class="lab">例</span><b>C(2,2) road1 の直進ポテンシャル</b>（表 2 より s<sub>u</sub>⁻(2,2)・σ⁺(2,2) を引く）
+      <div class="calc">J⁺ = 1361.63 <span class="op">−</span> <span class="frac" style="font-size:13px"><span>338.14</span><span>3</span></span> <span class="op">−</span> <span class="frac" style="font-size:13px"><span>993.67</span><span>6</span></span> = 1361.63 − 112.71 − 165.61 = <b>1083.31</b></div>
+      <div class="small">観測の流入 1361.63 のうち、約 278 が曲がり由来、残り 1083 が「素通りしたい需要」。</div>
+    </div>
+    <div class="note"><span class="lab">J⁻ と境界</span>同じ道路を到着側から見た値が J⁻ で、「出発点の J⁻ ＝ 到着点の J⁺」と一致するように作られています（帳簿が閉じる）。なお縁のセルは参照ループが欠けて近似になるため、正確なのは内側だけです（halo を付けて入力します）。</div>
+  </section>
+
+  <!-- 6 -->
+  <section id="s6" class="chap" style="--c:var(--jam);--exbg:var(--jambg)">
+    <p class="kicker">第 6 章</p>
+    <h2><span class="cn">6</span>渋滞未病スコア（ディラック型関数）</h2>
+    <p class="lead">直進ポテンシャルを入れると 0〜1 を返す S 字カーブ。閾値 μ と鋭さ β で形が決まります。</p>
+    <p>各道路の<b>直進ポテンシャル ε（到着側 J⁻：その道路に流れ込む素通り需要。第 5 章参照）</b>を入れると 0〜1 を返す<b>フェルミ・ディラック型（シグモイド）関数</b>で、渋滞の「未病（なりかけ）」を判定します。右左折込みの観測量ではなく、まっすぐ通したい量で混雑を測ります（ダッシュボードと同じ入力）。</p>
+
+    <div class="formula"><span class="eqno">(6.1)</span>
+      f(ε) <span class="op">=</span> <span class="frac"><span>1</span><span>1 + e<sup>−β(ε−μ)</sup></span></span>
+    </div>
+
+    <p>定数は 2 つ。<b>μ＝容量（閾値）</b>（S 字の中心、ここで f=0.5）と、<b>β＝鋭さ</b>（傾き）。<code>ε=μ</code> でちょうど 0.5、<code>ε&gt;μ</code> で 0.5 超＝<b>未病</b>。これらは<b>道路ごと</b>に持つ量なので、下のパネルで<b>道路を選び</b>、その道路の μ・β をバーで調整すると、未病スコア f(ε) がその場で動きます。点は各道路の (ε, f) の位置です。</p>
+
+    <div class="panel">
+      <div class="row">
+        <span class="pl">道路を選択</span>
+        <select id="road"></select>
+        <label class="chk"><input type="checkbox" id="auto"> β を直進率 φ から自動推定</label>
+      </div>
+      <div class="ctl" style="margin:10px 0 0">
+        <label>μ（容量＝中心）: <span class="val" id="muV"></span>
+          <input id="mu" type="range" min="0" max="3000" step="10" value="2000"></label>
+        <label>β（鋭さ＝傾き）: <span class="val" id="beV"></span>
+          <input id="be" type="range" min="0.0005" max="0.008" step="0.0001" value="0.0030"></label>
+      </div>
+      <div class="readout" id="rd"></div>
+    </div>
+
+    <figure>
+      <canvas id="cv" width="600" height="300"></canvas>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--jam)"></span>f(ε)＝未病スコア曲線</span>
+        <span><span class="dot" style="background:#1f5fae"></span>選択中の道路</span>
+        <span><span class="dot" style="background:#b9bcc4"></span>他の道路</span>
+      </div>
+      <figcaption><b>図 1</b>　各道路の直進ポテンシャル ε と未病スコア（μ・β はバーで操作可）</figcaption>
+    </figure>
+
+    <p><b>動かすと分かること。</b><br>
+      ・<b>μ（容量）を上げる</b>と、S 字が<b>右へ平行移動</b>し、未病（f≥0.5）になる道路が減ります。<br>
+      ・<b>β を上げる</b>と、中心 μ は動かず<b>傾きだけ急</b>になり、未病の「グレー帯（幅 ≈ 1/β）」が狭くなります。高速のように、容量直前まで平常 → いきなり詰まる挙動です。<br>
+      ・<b>自動 β</b> を入れると、<b>直進率 φ＝J⁺/J<sub>in</sub></b> が高い道路ほど β が大きく（鋭く）、右左折の多い道路ほど β が小さく（なだらか）になります。右左折が少ない＝回転成分 s・σ が小さい、という第 4・5 章の量とつながっています。</p>
+  </section>
+
+  <!-- 7 -->
+  <section id="s7" class="chap" style="--c:var(--jam)">
+    <p class="kicker">第 7 章</p>
+    <h2><span class="cn">7</span>パラメータ推定</h2>
+    <p class="lead">μ・β が曲線の形を決めるのは第 6 章のとおり。では交通的に何を表し、どう決めるのか。</p>
+    <p>μ・β はただの数値合わせではなく、道路ごとの交通の性質に対応します。まず<b>意味（交通的解釈）</b>を、そのあと<b>決め方（推定）</b>をまとめます。</p>
+
+    <h3>μ ＝ 容量（自由流 → 渋滞 の転換点）</h3>
+    <p>μ は曲線の中心（f=0.5 の点）で、交通的には<b>自由流から渋滞へ切り替わる転換点＝その道路の容量</b>です。ε はすでに 1 車線あたりの直進流量なので、μ は<b>1 車線が直進需要をさばける限界</b>。ε が μ を超えると流れが折れ、渋滞側へ入ります。</p>
+    <div class="ex" style="--exbg:var(--jambg)">
+      <span class="lab">交通での例</span>
+      1 車線が 1 時間に通せる台数の上限。信号のない流れでは 1 車線あたり毎時およそ <b>2000 台</b>が目安で、これを超えて車が入ろうとすると速度が崩れて渋滞に転じる——その「折れ目」が μ。容量の大きい道路ほど μ は大きく（曲線が右にずれ）、同じ需要でも未病になりにくい。
+    </div>
+
+    <h3>β ＝ 均質さ（交通流の乱れの少なさ）</h3>
+    <p>β は曲線の傾き（折れ方の急さ）で、交通的には<b>交通流の均質さ＝乱れの少なさ</b>を表します。均質なほど β は大きく、容量直前まで平常 → そこで急に折れる。乱れているほど β は小さく、なだらかに悪化する。未病の<b>猶予幅はおよそ 1/β</b>で、β が大きいほど猶予は短い（いきなり詰まる）。</p>
+    <div class="ex" style="--exbg:var(--jambg)">
+      <span class="lab">交通での例</span>
+      <b>均質さ 高い（β 大）＝高速道路型</b>：出入口・合流・信号の少ない高速や橋・トンネル。みな同じ向きに同じ速さで流れ、脇に逸れる車がほぼいない。容量ギリギリまで快適 → 超えた瞬間に<b>ガクッ</b>と詰まる（突発的なブレイクダウン）。<br><br>
+      <b>均質さ 低い（β 小）＝商店街・生活道路型</b>：両側に店・駐車場・脇道。曲がる車・停まる車・横断で速度も動きもバラバラ。はっきりした転換点がなく、需要が増えるほど<b>じわじわ</b>重くなる。
+      <div class="small" style="margin-top:7px">イメージ：高均質＝サラサラの水が細い管を流れて急に詰まる／低均質＝人混みの市場をかき分けて進む。</div>
+    </div>
+    <p>この均質さは、モデルの<b>直進率 φ＝J⁺/J<sub>in</sub></b>（まっすぐ抜ける割合＝右左折の少なさ）で測れます。φ が大きい＝回転成分 s・σ が小さい＝均質＝β 大。第 4・5 章で計算した量とそのままつながります。</p>
+
+    <h3>推定（どう数値を決めるか）</h3>
+    <p><b>μ（容量）</b>：1 車線の容量から決めます。最小車間時間 t<sub>h</sub> を使い <code>μ = 3600 / t<sub>h</sub> ≈ 2000 台/時/車線</code>（t<sub>h</sub>≈1.8 秒）。早めに警告したいときは安全係数 α(≈0.85) を掛けて <code>μ = α·容量</code>。</p>
+    <p><b>β（均質さ）</b>：直進率 φ から決めます。φ が高い（均質）ほど β を大きく、たとえば <code>β = β<sub>min</sub> + (β<sub>max</sub> − β<sub>min</sub>)·φ</code>。両端は「猶予幅 ≈ 1/β を容量の何割にするか」で置く（高速側＝数 %＝鋭い、街路側＝数十 %＝なだらか）。</p>
+    <div class="note"><span class="lab" style="font-weight:700;color:#46484f">確定値（ツールの既定）</span>このツールは既定で <b>μ＝容量 2000</b>・<b>β＝φ法（道路ごと）</b>・<b>τ＝0.40</b> を使います。旧・統計法（μ＝中央値・β＝4/IQR）は廃止した（下の脚注参照）。</div>
+
+    <h3>パラメータ設定案</h3>
+    <p>μ・β・τ をどう決めるかには複数の立場（解釈）があり、ダッシュボードでは名前の付いた<b>設定案</b>として切り替えられます。定義（1〜6章）は共通で、変わるのは診断の物差しだけです。</p>
+    <table>
+      <tr><th></th><th>μ（転換点）</th><th>β（鋭さ）</th><th>τ（閾値）</th><th>読み方</th></tr>
+      <tr><td><b>① 容量基準</b>（既定）</td><td>2000＝1車線容量（車頭時間1.8s）</td><td>直進率 φ（道路ごと）</td><td>0.40</td><td><b>絶対基準</b>。「物理的にあとどれだけ受けられるか」。制御シミュレーションの正準パラメータ</td></tr>
+      <tr><td><b>② 早期警戒</b></td><td>0.85×容量＝1700（安全係数α）</td><td>直進率 φ</td><td>0.35</td><td><b>前倒し警報</b>。余裕を持って早めに拾う。誤検知は増える</td></tr>
+    </table>
+    <p style="font-size:12px;color:#8a8d96">脚注（旧仕様・参考）: かつて「統計基準」（μ＝ε中央値・β＝統計4/IQR・τ＝0.50）という相対基準があったが、廃止した。τ=0.50 ちょうどでは β が判定に効かず、μ＝中央値では定義上つねに網の約半数が対象になるため、警報として機能しない（順位表示に過ぎない）。計算エンジンには beta_method="stat" として残っており、過去の解析JSONも読み込める。</p>
+
+    <h3>ダッシュボードでの調整</h3>
+    <p>左の「パラメータ調整」パネルは、<b>上段＝μ・β・τ の3本のバー</b>（動かすとマップの未病スコアが即再計算）、<b>下段＝パラメータ設定案の切替</b>という構成です。①②を選ぶと3つの値が上表のとおり一括で切り替わり、バーを手で動かすと自動的に<b>カスタム</b>になります（βのバーを動かした場合は一定値＝手動の扱い）。βの値表示は、φ法では道路ごとの範囲（min〜max）です。<b>既定値に戻す</b>で ① 容量基準へ戻ります。</p>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  // 実データ(7×7, seed=3, 境界完全な内側エッジ)。eps=直進ポテンシャル J⁻(到着側・ダッシュボードと同じ), phi=J⁺/J_in(直進率)
+  const ROADS=[
+    {e:"D(1,1) r6 → C(0,2)", eps:162.8,  phi:0.230},
+    {e:"C(3,1) r1 → E(3,1)", eps:448.9,  phi:0.469},
+    {e:"D(1,4) r2 → E(1,4)", eps:603.2,  phi:0.345},
+    {e:"E(2,4) r5 → D(2,4)", eps:951.4,  phi:0.896},
+    {e:"E(4,2) r2 → D(5,2)", eps:1357.8, phi:0.289},
+    {e:"D(1,0) r3 → C(1,0)", eps:1703.9, phi:0.526},
+    {e:"D(5,0) r3 → C(5,0)", eps:2203.9, phi:0.949},
+    {e:"E(5,2) r4 → C(5,2)", eps:2894.3, phi:0.672}
+  ];
+  const BMIN=0.0006, BMAX=0.007;  // 自動β: φ=0→BMIN(なだらか), φ=1→BMAX(鋭い)
+  const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+  const muR=document.getElementById('mu'), beR=document.getElementById('be');
+  const muV=document.getElementById('muV'), beV=document.getElementById('beV');
+  const sel=document.getElementById('road'), auto=document.getElementById('auto'), rd=document.getElementById('rd');
+  const W=cv.width, H=cv.height, pad=40, EMAX=3000;
+  ROADS.forEach((r,i)=>{const o=document.createElement('option');o.value=i;o.textContent=r.e+'   (ε='+r.eps+')';sel.appendChild(o);});
+  sel.value="7";  // 既定は幹線寄り(φ大・ε大)の道路
+  const X=e=>pad+(e/EMAX)*(W-2*pad);
+  const Y=f=>(H-pad)-f*(H-2*pad);
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const sig=(e,mu,be)=>{const x=be*(e-mu);return x>=0?1/(1+Math.exp(-x)):Math.exp(x)/(1+Math.exp(x));};
+  const betaFromPhi=phi=>BMIN+(BMAX-BMIN)*clamp(phi,0,1);
+  function draw(){
+    const cur=ROADS[+sel.value];
+    let be;
+    if(auto.checked){ be=betaFromPhi(cur.phi); beR.value=be.toFixed(4); beR.disabled=true; }
+    else { be=+beR.value; beR.disabled=false; }
+    const mu=+muR.value;
+    muV.textContent=mu; beV.textContent=be.toFixed(4);
+    ctx.clearRect(0,0,W,H);
+    // axes
+    ctx.strokeStyle='#c9ccd3'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(pad,Y(0)); ctx.lineTo(W-pad+6,Y(0)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(pad,Y(0)); ctx.lineTo(pad,pad-8); ctx.stroke();
+    // 0.5 line + mu line
+    ctx.strokeStyle='#e1e3e8'; ctx.setLineDash([4,3]);
+    ctx.beginPath(); ctx.moveTo(pad,Y(0.5)); ctx.lineTo(W-pad,Y(0.5)); ctx.stroke();
+    ctx.strokeStyle='#9aa0ad';
+    ctx.beginPath(); ctx.moveTo(X(mu),Y(0)); ctx.lineTo(X(mu),pad-2); ctx.stroke();
+    ctx.setLineDash([]);
+    // sigmoid curve
+    ctx.strokeStyle='#b5531f'; ctx.lineWidth=2.6; ctx.beginPath();
+    for(let px=0; px<=W-2*pad; px++){
+      const e=(px/(W-2*pad))*EMAX, f=sig(e,mu,be), cx=pad+px, cy=Y(f);
+      if(px===0) ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);
+    }
+    ctx.stroke();
+    // road dots
+    ROADS.forEach((r,i)=>{
+      const f=sig(r.eps,mu,be), cx=X(r.eps), cy=Y(f), on=(i===+sel.value);
+      if(on){
+        ctx.strokeStyle='#1f5fae'; ctx.setLineDash([3,3]); ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(cx,Y(0)); ctx.lineTo(cx,cy); ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.beginPath(); ctx.arc(cx,cy,on?6:4,0,2*Math.PI);
+      ctx.fillStyle=on?'#1f5fae':'#b9bcc4'; ctx.fill();
+      if(on){ ctx.strokeStyle='#fff'; ctx.lineWidth=1.6; ctx.stroke(); }
+    });
+    // labels
+    ctx.fillStyle='#6b6e7a'; ctx.font='12px "Yu Gothic UI",sans-serif'; ctx.textAlign='left';
+    ctx.fillText('1', pad-18, Y(1)+4);
+    ctx.fillText('0.5', pad-30, Y(0.5)+4);
+    ctx.fillText('0', pad-16, Y(0)+4);
+    ctx.fillText('ε（直進 J⁻）→', W-pad-96, Y(0)+24);
+    ctx.textAlign='center'; ctx.fillText('μ='+mu, X(mu), pad-10); ctx.textAlign='left';
+    // readout
+    const f=sig(cur.eps,mu,be), pre=f>=0.5;
+    rd.innerHTML='<span class="k">道路</span><b>'+cur.e+'</b>'+
+      '<span class="k">ε(J⁻)</span><b>'+cur.eps+'</b>'+
+      '<span class="k">直進率 φ</span><b>'+cur.phi.toFixed(2)+'</b>'+
+      '<span class="k">β</span><b>'+be.toFixed(4)+'</b>'+
+      '<span class="k">スコア f</span><b>'+f.toFixed(2)+'</b>'+
+      '<span class="badge '+(pre?'pre':'free')+'">'+(pre?'未病 f≥0.5':'平常 f<0.5')+'</span>';
+  }
+  [muR,beR,sel,auto].forEach(el=>el.addEventListener('input',draw));
+  draw();
+})();
+</script>
+</body>
+</html>
