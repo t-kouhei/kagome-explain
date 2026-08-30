@@ -1,0 +1,50 @@
+{
+ "2x2": {
+  "file": "lattice_2x2.json",
+  "display": 2,
+  "margin": 1,
+  "master": 4,
+  "counts": {
+   "nodes": 63,
+   "nodes_shown": 34,
+   "survey_nodes": 34,
+   "edges": 170,
+   "edges_inner": 48,
+   "edges_outer": 122,
+   "edges_required": 106,
+   "edges_skippable": 64
+  }
+ },
+ "3x3": {
+  "file": "lattice_3x3.json",
+  "display": 3,
+  "margin": 1,
+  "master": 5,
+  "counts": {
+   "nodes": 93,
+   "nodes_shown": 59,
+   "survey_nodes": 59,
+   "edges": 272,
+   "edges_inner": 108,
+   "edges_outer": 164,
+   "edges_required": 194,
+   "edges_skippable": 78
+  }
+ },
+ "4x4": {
+  "file": "lattice_4x4.json",
+  "display": 4,
+  "margin": 1,
+  "master": 6,
+  "counts": {
+   "nodes": 129,
+   "nodes_shown": 90,
+   "survey_nodes": 90,
+   "edges": 398,
+   "edges_inner": 192,
+   "edges_outer": 206,
+   "edges_required": 306,
+   "edges_skippable": 92
+  }
+ }
+}

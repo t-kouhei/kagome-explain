@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>観測データ入力 — 渋滞ダッシュボード</title>
+<style>
+  :root{
+    --bg:#f3f6fa; --surface:#ffffff; --surface-2:#f7f9fc;
+    --ink:#10243e; --muted:#627187; --faint:#8e9aac;
+    --line:#dce4ee; --line-strong:#c8d3e0;
+    --info:#246fdd; --info-ink:#1553a2; --infobg:#edf4ff;
+    --prejam:#d96a35; --control:#d64545;
+    --good:#16865f; --good-bg:#e8f6f0;
+    --fs-xs:11px; --fs-sm:12.5px; --fs-md:14px; --fs-lg:16px;
+    --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:999px;
+    --sh-1:0 1px 2px rgba(16,36,62,.04),0 5px 18px rgba(31,59,91,.055);
+    --sh-2:0 14px 38px rgba(27,52,82,.13);
+    --sbw:292px; --ease:cubic-bezier(.4,0,.2,1); --dur:.16s;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"BIZ UDPGothic","BIZ UDPゴシック","Yu Gothic UI","Noto Sans JP",Meiryo,sans-serif;
+       font-size:var(--fs-md);line-height:1.55;
+       -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+       -webkit-user-select:none;user-select:none}
+  input,select,textarea{-webkit-user-select:auto;user-select:auto}
+  :focus-visible{outline:2px solid var(--info);outline-offset:2px;border-radius:4px}
+
+  .app{display:flex;min-height:100vh}
+  .sidebar{flex:none;width:var(--sbw);height:100vh;position:sticky;top:0;overflow:hidden;
+    background:rgba(255,255,255,.98);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:30}
+  .sb-head{width:var(--sbw);flex:none;padding:17px 18px;border-bottom:1px solid var(--line)}
+  .sb-scroll{width:var(--sbw);flex:1;overflow-y:auto;overflow-x:hidden;
+    padding:16px 16px 28px;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin}
+  .content{flex:1;min-width:0;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;gap:18px;padding:12px 22px;min-height:72px;
+    background:rgba(255,255,255,.92);backdrop-filter:blur(14px);
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:15}
+  .meta-bar{margin-left:auto;display:flex;align-items:center;justify-content:flex-end;gap:14px;min-width:0}
+  .meta-field{display:flex;align-items:center;gap:8px;min-width:0}
+  .meta-field>span:first-child{font-size:var(--fs-xs);font-weight:700;color:var(--muted);white-space:nowrap}
+  .meta-name input{width:190px}
+  .time-range{display:flex;align-items:center;gap:7px}
+  .time-range input{width:104px}
+  .duration-pill{display:inline-flex;align-items:center;justify-content:center;min-width:70px;padding:5px 9px;
+    border-radius:var(--r-pill);background:var(--infobg);color:var(--info-ink);font-size:var(--fs-xs);font-weight:700;white-space:nowrap}
+  .main{display:flex;flex-direction:column;gap:12px;min-width:0;padding:20px 22px 26px;flex:1}
+
+  .brand{display:flex;align-items:center;gap:11px;min-width:0}
+  .brand .logo{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;
+    background:linear-gradient(145deg,#eff6ff,#dcecff);border:1px solid #c9ddf8;flex:none;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9)}
+  .brand-text{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+  .brand .title{font-size:var(--fs-lg);font-weight:800;letter-spacing:.01em}
+  .subtitle{font-size:var(--fs-xs);color:var(--muted);margin-top:3px}
+
+  button{font:inherit;min-height:38px;padding:8px 14px;border:1px solid var(--line-strong);border-radius:var(--r-sm);
+    background:var(--surface);color:var(--ink);cursor:pointer;
+    font-weight:700;transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease),transform var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+  button:hover{background:var(--surface-2);border-color:#afbdcd}
+  button:active{transform:translateY(1px)}
+  button:disabled{color:var(--faint);background:var(--surface-2);cursor:not-allowed}
+  button.primary{background:linear-gradient(180deg,#2e7be5,#2168d0);border:1px solid #1f67d0;color:#fff;font-weight:800;
+    box-shadow:0 5px 14px rgba(36,111,221,.2)}
+  button.primary:hover:not(:disabled){background:linear-gradient(180deg,#2772d9,#195dbc);border-color:#195dbc;box-shadow:0 7px 18px rgba(36,111,221,.26)}
+  button.primary:disabled{background:var(--line-strong);border-color:var(--line-strong);color:#fff}
+  button.ghost{background:transparent;border-color:var(--line)}
+  .back-link{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-sm);font-weight:700;color:var(--info-ink);
+    text-decoration:none;white-space:nowrap;padding:8px 10px;border-radius:var(--r-sm)}
+  .back-link:hover{background:var(--infobg)}
+  .menu-btn{display:none;width:38px;padding:0;font-size:18px;background:var(--surface)}
+
+  input[type=text],input[type=time],input[type=number],select{
+    font:inherit;min-height:38px;padding:7px 10px;border:1px solid var(--line-strong);border-radius:var(--r-sm);
+    background:var(--surface);color:var(--ink);
+    transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+  input:focus,select:focus{border-color:var(--info);box-shadow:0 0 0 3px var(--infobg);outline:none}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+    padding:15px 16px;box-shadow:var(--sh-1)}
+  .card h3{margin:0 0 12px;font-size:var(--fs-md);font-weight:800;color:var(--ink);
+    display:flex;align-items:center;gap:7px}
+  .card h3::before{content:"";width:3px;height:16px;border-radius:3px;background:var(--info)}
+  .field-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:10px;margin:9px 0}
+  .field-row label{color:var(--muted);font-size:var(--fs-sm)}
+  .kv{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:var(--fs-sm)}
+  .kv span:first-child{color:var(--muted)}
+  .kv.em span:last-child{font-weight:700;font-variant-numeric:tabular-nums}
+  .hint{color:var(--muted);font-size:var(--fs-sm);line-height:1.6}
+  .note{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);
+    padding:10px 11px;font-size:var(--fs-xs);color:var(--muted);line-height:1.65}
+  /* 標準の道路（インフラの既定値） */
+  .std-grid{display:grid;grid-template-columns:1fr 68px auto;align-items:center;gap:6px 8px}
+  .std-grid label{color:var(--muted);font-size:var(--fs-sm)}
+  .std-grid input{width:100%;text-align:right;padding:5px 7px;border:1px solid var(--line);
+    border-radius:6px;font-size:var(--fs-sm);font-variant-numeric:tabular-nums}
+  .std-grid .unit{color:var(--faint);font-size:var(--fs-xs)}
+  .std-carry{display:flex;align-items:center;gap:7px;margin-top:10px;
+    font-size:var(--fs-xs);color:var(--muted);cursor:pointer}
+  .std-carry input{accent-color:var(--info)}
+  .scale-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:8px}
+  .scale-stat{padding:8px;background:var(--surface);border:1px solid var(--line);border-radius:7px}
+  .scale-stat span{display:block;color:var(--faint);font-size:10px;line-height:1.3}
+  .scale-stat b{display:block;margin-top:2px;color:var(--ink);font-size:15px;font-variant-numeric:tabular-nums}
+  .scale-foot{padding-top:7px;border-top:1px solid var(--line);color:var(--muted)}
+
+  .bar{height:7px;background:#edf1f6;border-radius:var(--r-pill);overflow:hidden;margin:5px 0 10px}
+  .bar > div{height:100%;transition:width .25s var(--ease)}
+  .bar.inner > div{background:var(--good)}
+  .bar.outer > div{background:var(--line-strong)}
+
+  .workspace-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:0 2px 3px}
+  .workspace-head h1{margin:1px 0 2px;font-size:21px;line-height:1.35;letter-spacing:.01em}
+  .workspace-head p{margin:0;color:var(--muted);font-size:var(--fs-sm)}
+  .kicker{font-size:10px;font-weight:800;letter-spacing:.13em;color:var(--info)}
+  .workspace-help{display:flex;align-items:center;gap:7px;white-space:nowrap;color:var(--muted);font-size:var(--fs-xs)}
+  .workspace-help::before{content:"i";display:grid;place-items:center;width:19px;height:19px;border-radius:50%;
+    background:var(--infobg);color:var(--info);font-size:11px;font-weight:800}
+
+  .canvas{background:radial-gradient(120% 110% at 50% 0%,#fff 0%,#f8fafc 58%,#f3f6f9 100%);
+    border:1px solid #d7e0ea;border-radius:var(--r-lg);padding:4px;position:relative;
+    overflow:hidden;height:clamp(380px,64vh,720px);box-shadow:0 10px 32px rgba(31,59,91,.07);
+    display:flex;align-items:center;justify-content:center}
+  .main.has-grid .canvas{height:auto;aspect-ratio:var(--grid-aspect,16/10)}
+  #svg{display:block;width:100%;height:100%}
+  .placeholder{max-width:430px;text-align:center;color:var(--muted);font-size:var(--fs-sm);line-height:1.8;padding:28px}
+  .placeholder-icon{width:58px;height:58px;margin:0 auto 15px;display:grid;place-items:center;border-radius:18px;
+    background:linear-gradient(145deg,#eef5ff,#dcecff);border:1px solid #cbdff8;box-shadow:0 8px 20px rgba(36,111,221,.09)}
+  .placeholder .big{font-size:18px;color:var(--ink);font-weight:800;margin-bottom:7px}
+  .placeholder .sub{color:var(--muted)}
+
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:var(--fs-xs);color:var(--muted);
+    padding:9px 13px;min-height:38px;align-items:center;background:rgba(255,255,255,.92);
+    border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--sh-1)}
+  .legend i{display:inline-block;width:18px;height:2px;vertical-align:4px;margin-right:4px;border-radius:2px}
+
+  /* ── 入力パネル ── */
+  /* 開いている間はキャンバスを縮めて、格子とパネルが同時に見えるようにする */
+  .main.editing .canvas{height:clamp(240px,36vh,380px);aspect-ratio:auto}
+  .edit{border:1px solid #9fc3f2;box-shadow:var(--sh-2)}
+  .edit-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .edit-title{font-size:var(--fs-lg);font-weight:800}
+  .edit-x{margin-left:auto;background:transparent;border:none;color:var(--faint);
+    font-size:18px;line-height:1;cursor:pointer;padding:2px 6px}
+  .edit-x:hover{color:var(--ink);background:transparent}
+  .shared{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--muted);
+    padding:8px 10px;background:var(--surface-2);border:1px solid var(--line);
+    border-radius:var(--r-sm);margin-bottom:10px}
+  .shared.infra-shared{background:#f3f7fc;border-color:#d7e4f2;padding:10px 12px}
+  .section-tag{display:inline-flex;align-items:center;min-height:22px;padding:3px 8px;border-radius:var(--r-pill);
+    background:#e4eefb;color:var(--info-ink);font-size:10px;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+  .dirs{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+  .dir{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px}
+  .dir.focus{border-color:var(--info);background:var(--infobg)}
+  .dir h4{margin:0 0 8px;font-size:var(--fs-sm);font-weight:700;color:var(--info-ink);
+    display:flex;align-items:center;gap:6px}
+  .dir h4 .done{margin-left:auto;font-size:var(--fs-xs);color:var(--good);font-weight:700}
+  .dir-section-label{display:flex;align-items:center;gap:7px;margin:7px 0 5px;color:var(--muted);
+    font-size:10px;font-weight:800;letter-spacing:.07em}
+  .dir-section-label::after{content:"";height:1px;background:var(--line);flex:1}
+  .dir-section-label.infrastructure{margin-top:10px;padding-top:9px;border-top:1px solid #d5e1ef;color:var(--info-ink)}
+  .dir-section-label.infrastructure::after{background:#cbdced}
+  /* 任意項目。測っていなければ空欄でよい、と見た目で分かるように弱める */
+  .dir-section-label.optional{margin-top:10px;padding-top:9px;border-top:1px dashed var(--line);
+    color:var(--faint);font-weight:600}
+  .dir-section-label.optional::after{background:transparent}
+  .prefill-tag{background:#eef4fb;color:#3d6fa8;border-radius:4px;padding:1px 6px;
+    font-size:10px;font-weight:700;letter-spacing:0}
+  .fr{display:grid;grid-template-columns:1fr 92px auto;align-items:center;gap:8px;margin:5px 0}
+  .fr label{font-size:var(--fs-sm);color:var(--muted)}
+  .fr input{width:100%;text-align:right;font-variant-numeric:tabular-nums}
+  .fr .unit{font-size:var(--fs-xs);color:var(--faint);min-width:52px}
+  .fr .beta{font-size:var(--fs-xs);color:var(--info);min-width:52px;font-variant-numeric:tabular-nums}
+  .lanes{display:grid;grid-template-columns:1fr repeat(3,46px);align-items:center;gap:6px;margin:5px 0}
+  .lanes input{width:100%;text-align:center;padding:5px 4px}
+  .lanes .cap{font-size:10px;color:var(--faint);text-align:center}
+  .straight{font-size:var(--fs-xs);color:var(--muted);margin-top:6px;
+    padding-top:6px;border-top:1px dashed var(--line)}
+  .straight b{color:var(--ink)}
+  .bad{color:var(--control)!important}
+  input.bad{border-color:var(--control);box-shadow:0 0 0 3px #fdecec}
+  .edit-err{margin-top:9px;font-size:var(--fs-sm);color:var(--control);min-height:20px}
+  .edit-act{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+  .edit-hint{font-size:var(--fs-xs);color:var(--faint);margin-left:auto}
+
+  #toastHost{position:fixed;right:18px;bottom:18px;z-index:9999;display:flex;flex-direction:column;
+    gap:10px;max-width:min(360px,calc(100vw - 36px));pointer-events:none}
+  .toast{display:flex;align-items:flex-start;gap:10px;pointer-events:auto;
+    background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--muted);
+    border-radius:var(--r-md);box-shadow:var(--sh-2);padding:11px 12px;
+    font-size:var(--fs-sm);line-height:1.5;opacity:0;transform:translateY(10px);
+    transition:opacity .22s var(--ease),transform .22s var(--ease)}
+  .toast.show{opacity:1;transform:translateY(0)}
+  .toast.error{border-left-color:var(--control)} .toast.warn{border-left-color:var(--prejam)}
+  .toast.ok{border-left-color:var(--good)} .toast.info{border-left-color:var(--info)}
+  .toast .ti{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+    font-size:12px;font-weight:800;color:#fff;background:var(--muted)}
+  .toast.error .ti{background:var(--control)} .toast.warn .ti{background:var(--prejam)}
+  .toast.ok .ti{background:var(--good)} .toast.info .ti{background:var(--info)}
+  .toast .tm{flex:1;white-space:pre-line}
+  .toast .tx{flex:none;background:transparent;border:none;color:var(--faint);font-size:16px;
+    line-height:1;cursor:pointer;padding:0 2px}
+
+  .scrim{display:none;position:fixed;inset:0;background:rgba(10,29,52,.34);backdrop-filter:blur(2px);z-index:25}
+  @media (max-width:1080px){
+    .topbar{align-items:flex-start;flex-wrap:wrap;gap:8px 14px;padding:10px 16px}
+    .meta-bar{width:100%;justify-content:flex-start;margin-left:0;padding-left:2px}
+    .main{padding:17px 18px 24px}
+  }
+  @media (max-width:900px){
+    .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);
+      transition:transform .22s var(--ease);box-shadow:var(--sh-2)}
+    .app.sb-open .sidebar{transform:translateX(0)}
+    .app.sb-open .scrim{display:block}
+    .menu-btn{display:inline-grid;place-items:center}
+    .topbar{align-items:center}
+    .meta-bar{padding-left:0}
+  }
+  @media (max-width:620px){
+    .topbar{gap:8px;padding:10px 12px}
+    .meta-bar{display:grid;grid-template-columns:1fr;width:100%;gap:8px}
+    .meta-field{display:grid;grid-template-columns:84px 1fr}
+    .meta-name input{width:100%}
+    .time-range{min-width:0}.time-range input{width:100%;min-width:0}
+    .main{padding:14px 12px 20px}
+    .workspace-head{align-items:flex-start;flex-direction:column;gap:7px}
+    .workspace-head h1{font-size:19px}
+    .workspace-help{white-space:normal}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#246fdd" stroke-width="1.7" stroke-linejoin="round">
+            <path d="M12 2 4 6.5v9L12 20l8-4.5v-9L12 2Z"/><path d="M12 2v18M4 6.5l16 9M20 6.5l-16 9"/>
+          </svg>
+        </span>
+        <div class="brand-text">
+          <div class="title">観測データ入力</div>
+          <div class="subtitle">道路ごとの観測値を入力</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-scroll">
+      <div class="card">
+        <h3>解析範囲</h3>
+        <div class="field-row">
+          <label for="displaySelect">見たい範囲</label>
+          <select id="displaySelect">
+            <option value="2">2 × 2</option>
+            <option value="3" selected>3 × 3</option>
+            <option value="4">4 × 4</option>
+          </select>
+        </div>
+        <select id="marginSelect" style="display:none"><option value="1" selected>1</option></select>
+        <div class="note" id="scaleNote">調査規模を計算中…</div>
+        <button class="primary" id="buildBtn" style="width:100%;margin-top:10px">格子を作成</button>
+      </div>
+
+      <div class="card">
+        <h3>標準の道路</h3>
+        <div class="note" style="margin-bottom:8px">
+          この地区でいちばん多い道路の形を入れておくと、入力欄が最初からこの値で開きます。
+          違う道路のときだけ直してください。
+        </div>
+        <div class="std-grid">
+          <label for="stdRoadLen">道路長</label>
+          <input type="number" id="stdRoadLen" step="0.01" min="0.01" value="0.45">
+          <span class="unit">km</span>
+
+          <label for="stdLanes">車線数</label>
+          <input type="number" id="stdLanes" step="1" min="1" value="2">
+          <span class="unit">本</span>
+
+          <label for="stdLaneR">右折レーン</label>
+          <input type="number" id="stdLaneR" step="1" min="1" value="1">
+          <span class="unit">本</span>
+
+          <label for="stdLaneL">左折レーン</label>
+          <input type="number" id="stdLaneL" step="1" min="1" value="1">
+          <span class="unit">本</span>
+
+          <label for="stdLaneS">直進レーン</label>
+          <input type="number" id="stdLaneS" step="1" min="1" value="2">
+          <span class="unit">本</span>
+        </div>
+        <label class="std-carry">
+          <input type="checkbox" id="carryForward" checked>
+          直前に入力した道路の形を引き継ぐ
+        </label>
+      </div>
+
+      <div class="card">
+        <h3>進捗</h3>
+        <div class="kv"><span>内側（見たい範囲）</span><span id="progInner">0 / 0</span></div>
+        <div class="bar inner"><div id="barInner" style="width:0%"></div></div>
+        <div class="kv"><span>余白（計算に必要）</span><span id="progOuter">0 / 0</span></div>
+        <div class="bar outer"><div id="barOuter" style="width:0%"></div></div>
+        <div class="kv em" style="border-top:1px solid var(--line);margin-top:6px;padding-top:8px">
+          <span>合計</span><span id="progAll">0 / 0</span></div>
+        <button id="nextBtn" style="width:100%;margin-top:9px" disabled>次の未入力へ</button>
+      </div>
+
+      <div class="card">
+        <h3>操作</h3>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <button id="checkBtn" disabled>検査する</button>
+          <button class="primary" id="analyzeBtn" disabled>解析実行</button>
+          <button id="downloadBtn" disabled>ダウンロード（CSV）</button>
+          <input type="file" id="loadInput" accept=".csv" style="display:none">
+          <button id="loadBtn">読込（再開）</button>
+        </div>
+        <div class="note" id="actionStatus" style="margin-top:9px">
+          入力後は「検査する」→「解析実行」の順に進みます。
+        </div>
+        <div class="note" id="draftStatus" style="margin-top:9px;border-top:1px solid var(--line);padding-top:8px">
+          下書きはこの端末に自動保存されます。
+        </div>
+        <button id="draftClearBtn" style="margin-top:6px;display:none">下書きを破棄</button>
+      </div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" aria-hidden="true"></div>
+
+  <div class="content">
+    <header class="topbar">
+      <button class="menu-btn" id="menuBtn" aria-label="入力メニューを開く">☰</button>
+      <a class="back-link" href="index.html"><span aria-hidden="true">←</span> ダッシュボード</a>
+      <div class="meta-bar" aria-label="観測データの基本情報">
+        <label class="meta-field meta-name" for="nameInput">
+          <span>データ名</span>
+          <input type="text" id="nameInput" placeholder="例：中央地区_朝ピーク">
+        </label>
+        <div class="meta-field meta-time">
+          <span>観測時間帯</span>
+          <div class="time-range">
+            <input type="time" id="startTime" value="07:30" aria-label="観測開始時刻">
+            <span class="hint">–</span>
+            <input type="time" id="endTime" value="08:30" aria-label="観測終了時刻">
+            <span class="duration-pill" id="durationLabel">1.00 時間</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="main">
+      <div class="workspace-head">
+        <div>
+          <span class="kicker">OBSERVATION GRID</span>
+          <h1>交通量を格子へ入力</h1>
+          <p>道路を選択し、交通量・右左折台数・沿道の出入り・インフラを登録します。</p>
+        </div>
+        <div class="workspace-help">道路をクリックすると入力欄が開きます</div>
+      </div>
+      <div class="canvas" id="canvas">
+        <div class="placeholder" id="placeholder">
+          <div class="placeholder-icon" aria-hidden="true">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#246fdd" stroke-width="1.5" stroke-linejoin="round">
+              <path d="M12 2 4 6.5v9L12 20l8-4.5v-9L12 2Z"/><path d="M12 2v18M4 6.5l16 9M20 6.5l-16 9"/>
+            </svg>
+          </div>
+          <div class="big">入力する格子を作成してください</div>
+          <div class="sub">左側で解析範囲を選び「格子を作成」を押すと、<br>道路ごとの観測値を入力できます。</div>
+        </div>
+        <svg id="svg" viewBox="0 0 760 460" role="img"
+             aria-label="観測入力用のカゴメ格子" style="display:none"></svg>
+      </div>
+
+      <div class="legend" id="legend">
+        <span><i style="background:var(--good)"></i>入力済み</span>
+        <span><i style="background:var(--line-strong)"></i>要入力</span>
+        <span><i style="background:var(--line-strong);opacity:.35"></i>調査不要（自動補完）</span>
+        <span><i style="background:var(--info);height:3px"></i>選択中</span>
+        <span>実線＝順方向 / 破線＝逆方向</span>
+        <span>数値＝通過台数</span>
+      </div>
+
+      <div class="card edit" id="editPanel" style="display:none">
+        <div class="edit-head">
+          <span class="edit-title" id="editTitle">—</span>
+          <button class="edit-x" id="editClose" aria-label="閉じる">×</button>
+        </div>
+        <div class="shared infra-shared">
+          <span class="section-tag">インフラ</span>
+          <label for="fRoadLen">道路長（往復共通）</label>
+          <input type="number" id="fRoadLen" step="0.01" min="0.01" style="width:90px;text-align:right">
+          <span style="color:var(--faint)">km</span>
+        </div>
+        <div class="dirs" id="editDirs"></div>
+        <div class="edit-err" id="editErr"></div>
+        <div class="edit-act">
+          <button class="primary" id="editSave">保存して次へ</button>
+          <button id="editSaveStay">保存して閉じる</button>
+          <button id="editCopy">上りの値を下りにコピー</button>
+          <button id="editClear">この道路をクリア</button>
+          <span class="edit-hint">Enter で保存して次へ / Esc で閉じる</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toastHost" aria-live="polite"></div>
+
+<script>
+// ── 画面内トースト ──
+function toast(msg, type){
+  type = type || 'info';
+  var host = document.getElementById('toastHost');
+  if(!host){ console.log(msg); return; }
+  var el = document.createElement('div');
+  el.className = 'toast ' + type; el.setAttribute('role','status');
+  var icon = type==='ok' ? '✓' : type==='info' ? 'i' : '!';
+  var ti=document.createElement('span'); ti.className='ti'; ti.textContent=icon;
+  var tm=document.createElement('span'); tm.className='tm'; tm.textContent=String(msg);
+  var tx=document.createElement('button'); tx.className='tx'; tx.setAttribute('aria-label','閉じる'); tx.textContent='×';
+  el.appendChild(ti); el.appendChild(tm); el.appendChild(tx); host.appendChild(el);
+  requestAnimationFrame(function(){ el.classList.add('show'); });
+  var timer=setTimeout(dismiss,5000);
+  function dismiss(){ clearTimeout(timer); el.classList.remove('show');
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },240); }
+  tx.addEventListener('click',dismiss);
+}
+
+// ── 状態 ──
+// entries は「有向辺ID → 入力値」。CSV への変換は保存時に1回だけ行う。
+var STATE = {
+  meta: { name:'', start:'07:30', end:'08:30', display:3, margin:1 },
+  skeleton: null,     // U1/U2 で読み込む格子の骨組み
+  entries: {}         // { "C_2_2_road1": {count, turn_R, turn_L, source_count, sink_count, lanes, ...} }
+};
+
+// ── 調査規模 ──
+// 数は格子構造から決まるので推定しない。Python が出した目録(skeleton/index.json)を読む。
+var SKELETON_INDEX = null;
+
+function skeletonKey(display, margin){
+  return display + 'x' + display + (margin === 1 ? '' : '_m' + margin);
+}
+
+function updateScaleNote(){
+  var d = +document.getElementById('displaySelect').value;
+  var m = +document.getElementById('marginSelect').value;
+  var el = document.getElementById('scaleNote');
+  var master = d + 2*m;
+
+  if(!SKELETON_INDEX){
+    el.innerHTML = '内側 <b>'+d+'×'+d+'</b> を見るには <b>'+master+'×'+master+'</b> の入力が必要です。<br>'
+                 + '<span style="color:var(--faint)">規模を読み込み中…</span>';
+    return;
+  }
+  var info = SKELETON_INDEX[skeletonKey(d,m)];
+  if(!info){
+    el.innerHTML = '内側 <b>'+d+'×'+d+'</b> を見るには <b>'+master+'×'+master+'</b> の入力が必要です。<br>'
+      + '<span style="color:var(--prejam)">この組み合わせの骨組みが未生成です。</span><br>'
+      + '<code>python src/make_skeleton.py --display '+d+' --margin '+m+'</code> を実行してください。';
+    return;
+  }
+  var c = info.counts;
+  var halo = c.edges_required - c.edges_inner;
+  el.innerHTML =
+    '<div class="scale-stats">'
+    + '<div class="scale-stat"><span>調査交差点</span><b>'+c.survey_nodes+' 箇所</b></div>'
+    + '<div class="scale-stat"><span>有向道路</span><b>'+c.edges_required+' 本</b></div>'
+    + '</div>'
+    + '<div>解析範囲 <b>'+c.edges_inner+'</b> 本 ／ 計算用の余白 <b>'+halo+'</b> 本</div>'
+    + '<div class="scale-foot">残り '+c.edges_skippable+' 本は台数の観測が不要です'
+    + '（車線数・道路長・右左折率は自動補完）。<br>'
+    + '補完は推定なので誤差が出ます（内側の中央値 0.3%・最悪 24%）。'
+    + '薄い線をクリックして車線数と道路長を地図から入れると精度が上がります。</div>';
+}
+
+// セレクタは目録から作る。こうすると「UIで選べるのに骨組みが無い」状態が起きない。
+function rebuildSelectors(){
+  var dSel = document.getElementById('displaySelect');
+  var mSel = document.getElementById('marginSelect');
+  if(!SKELETON_INDEX) return;
+
+  var entries = Object.keys(SKELETON_INDEX).map(function(k){ return SKELETON_INDEX[k]; });
+  var displays = [];
+  entries.forEach(function(e){ if(displays.indexOf(e.display) < 0) displays.push(e.display); });
+  displays.sort(function(a,b){ return a-b; });
+  if(!displays.length) return;
+
+  var wantD = +dSel.value;
+  if(displays.indexOf(wantD) < 0) wantD = displays[0];
+  dSel.innerHTML = '';
+  displays.forEach(function(d){
+    var o = document.createElement('option');
+    o.value = d; o.textContent = d + ' × ' + d;
+    if(d === wantD) o.selected = true;
+    dSel.appendChild(o);
+  });
+
+  // 余白は「選ばれている表示範囲で実在するもの」だけを出す
+  var margins = [];
+  entries.forEach(function(e){
+    if(e.display === wantD && margins.indexOf(e.margin) < 0) margins.push(e.margin);
+  });
+  margins.sort(function(a,b){ return a-b; });
+  var wantM = +mSel.value;
+  if(margins.indexOf(wantM) < 0) wantM = margins[0];
+  mSel.innerHTML = '';
+  margins.forEach(function(m){
+    var o = document.createElement('option');
+    o.value = m;
+    o.textContent = m + (m === 1 ? '（標準）' : '（面まで正確に）');
+    if(m === wantM) o.selected = true;
+    mSel.appendChild(o);
+  });
+}
+
+function loadSkeletonIndex(){
+  return fetch('skeleton/index.json')
+    .then(function(r){ if(!r.ok) throw new Error('index.json が見つかりません'); return r.json(); })
+    .then(function(j){ SKELETON_INDEX = j; rebuildSelectors(); updateScaleNote(); })
+    .catch(function(){
+      // file:// で直接開くとブラウザが JSON の読み込みを拒否する（CORS）。
+      // サーバ経由かどうかで案内を出し分ける。
+      var isFile = location.protocol === 'file:';
+      document.getElementById('scaleNote').innerHTML = isFile
+        ? '<span style="color:var(--prejam)">ファイルを直接開いています。</span><br>'
+          + 'ブラウザの制限で格子データを読めません。<br>'
+          + '<code>python src/server.py</code> を起動し<br>'
+          + '<code>http://127.0.0.1:8000/input.html</code> から開いてください。'
+        : '<span style="color:var(--prejam)">格子の目録を読み込めませんでした。</span><br>'
+          + '<code>python src/make_skeleton.py</code> を実行してから開いてください。';
+    });
+}
+
+// ── 観測時間の算出 ──
+function durationHours(){
+  var a = document.getElementById('startTime').value;
+  var b = document.getElementById('endTime').value;
+  if(!a || !b) return null;
+  var pa = a.split(':').map(Number), pb = b.split(':').map(Number);
+  var mins = (pb[0]*60+pb[1]) - (pa[0]*60+pa[1]);
+  if(mins <= 0) mins += 24*60;          // 日をまたぐ観測
+  return mins/60;
+}
+function updateDuration(){
+  var h = durationHours();
+  var el = document.getElementById('durationLabel');
+  if(h === null){ el.textContent = '—'; return; }
+  el.textContent = h.toFixed(2) + ' 時間';
+  STATE.meta.start = document.getElementById('startTime').value;
+  STATE.meta.end   = document.getElementById('endTime').value;
+}
+
+// ── 進捗表示 ──
+function updateProgress(){
+  var s = STATE.skeleton;
+  if(!s){
+    document.getElementById('progInner').textContent = '0 / 0';
+    document.getElementById('progOuter').textContent = '0 / 0';
+    document.getElementById('progAll').textContent   = '0 / 0';
+    return;
+  }
+  // 進捗の分母は「測る必要がある辺」だけ。不要な辺は数えない。
+  var innerDone=0, innerAll=0, outerDone=0, outerAll=0;
+  s.edges.forEach(function(e){
+    if(!e.required) return;
+    var done = !!STATE.entries[e.id];
+    if(e.inner){ innerAll++; if(done) innerDone++; }
+    else { outerAll++; if(done) outerDone++; }
+  });
+  document.getElementById('progInner').textContent = innerDone+' / '+innerAll;
+  document.getElementById('progOuter').textContent = outerDone+' / '+outerAll;
+  document.getElementById('progAll').textContent   = (innerDone+outerDone)+' / '+(innerAll+outerAll);
+  document.getElementById('barInner').style.width = innerAll ? (100*innerDone/innerAll)+'%' : '0%';
+  document.getElementById('barOuter').style.width = outerAll ? (100*outerDone/outerAll)+'%' : '0%';
+
+  var any = (innerDone+outerDone) > 0;
+  document.getElementById('checkBtn').disabled = !any;
+  document.getElementById('analyzeBtn').disabled = !any;
+  document.getElementById('downloadBtn').disabled = !any;
+
+  // 終盤に「残りどこ？」を目で探さなくて済むように、残り本数と飛び先を出す
+  var rest = (innerAll+outerAll) - (innerDone+outerDone);
+  var nb = document.getElementById('nextBtn');
+  if(nb){
+    nb.disabled = rest <= 0;
+    nb.textContent = rest > 0 ? ('次の未入力へ（残り ' + rest + ' 本）') : '未入力なし';
+  }
+}
+
+// ── イベント ──
+document.getElementById('displaySelect').addEventListener('change', function(){
+  rebuildSelectors();   // 表示範囲を変えたら、その範囲で実在する余白だけに絞り直す
+  updateScaleNote();
+});
+document.getElementById('marginSelect').addEventListener('change', updateScaleNote);
+document.getElementById('nextBtn').addEventListener('click', goNextUnfilled);
+document.getElementById('startTime').addEventListener('change', updateDuration);
+document.getElementById('endTime').addEventListener('change', updateDuration);
+document.getElementById('nameInput').addEventListener('input', function(e){
+  STATE.meta.name = e.target.value;
+});
+
+// ══════════════════════════════════════════════════════════
+//  格子の描画
+//  ダッシュボードの「観測量 J」レイヤーと同じ方式:
+//    中心線から法線方向に off だけずらし、両端を shrink 縮める
+//    → 往復2本が平行に並び、どちらも独立してクリックできる
+//  d3 は使わない（現地・オフラインでも動くように CDN 依存を持たない）
+// ══════════════════════════════════════════════════════════
+var SVGNS = 'http://www.w3.org/2000/svg';
+var VIEW = null;              // 座標変換
+var SELECTED = null;          // 選択中の辺ID
+var EDGE_EL = {};             // 辺ID → { line, hit, label }
+
+var NODE_COLOR = { C:'#7F77DD', D:'#D85A30', E:'#1D9E75' };
+var C_UNSET = '#c9c8c2', C_DONE = '#1d9e75', C_SEL = '#1668b8';
+
+function svgEl(name, attrs){
+  var el = document.createElementNS(SVGNS, name);
+  for(var k in attrs){ if(attrs[k] !== null && attrs[k] !== undefined) el.setAttribute(k, attrs[k]); }
+  return el;
+}
+
+function computeTransform(sk){
+  // 図全体を1つの viewBox にまとめ、preserveAspectRatio="meet" で収める
+  var xs = [], ys = [];
+  // 非表示の外周ノードを含めると格子本体が小さくなるため、表示対象だけで範囲を決める。
+  var visibleNodes = sk.nodes.filter(function(n){ return n.shown; });
+  (visibleNodes.length ? visibleNodes : sk.nodes).forEach(function(n){ xs.push(n.x); ys.push(n.y); });
+  var minx = Math.min.apply(null, xs), maxx = Math.max.apply(null, xs);
+  var miny = Math.min.apply(null, ys), maxy = Math.max.apply(null, ys);
+  var K = 40, pad = 18;
+  var W = Math.round(((maxx-minx)||1)*K + 2*pad);
+  var H = Math.round(((maxy-miny)||1)*K + 2*pad);
+  // y軸反転（計算座標は上が+、SVGは下が+）
+  return { sx:function(x){ return pad + (x-minx)*K; },
+           sy:function(y){ return pad + (maxy-y)*K; }, W:W, H:H };
+}
+
+function edgeGeometry(e){
+  var x1 = VIEW.sx(e.x1), y1 = VIEW.sy(e.y1);
+  var x2 = VIEW.sx(e.x2), y2 = VIEW.sy(e.y2);
+  var dx = x2-x1, dy = y2-y1;
+  var L = Math.hypot(dx,dy) || 1; dx/=L; dy/=L;
+  var nx = -dy, ny = dx;
+  var off = 4, shrink = 18;
+  return {
+    sx: x1 + dx*shrink + nx*off, sy: y1 + dy*shrink + ny*off,
+    ex: x2 - dx*shrink + nx*off, ey: y2 - dy*shrink + ny*off,
+    nx: nx, ny: ny
+  };
+}
+
+function edgeStyle(e){
+  var done = !!STATE.entries[e.id];
+  var sel  = SELECTED === e.id;
+  if(sel)  return { stroke:C_SEL,   width:3.2, opacity:1,    dash:null };
+  if(done) return { stroke:C_DONE,  width:2.2, opacity:0.95, dash:null };
+  // 台数の観測が不要な辺。行は必要だが現地では測らないので、点線で薄く。
+  if(!e.required) return { stroke:C_UNSET, width:0.9, opacity:0.3, dash:'2 5' };
+  return     { stroke:C_UNSET, width:e.forward ? 1.5 : 1.2, opacity:e.forward ? 0.75 : 0.5, dash:null };
+}
+
+function renderLattice(){
+  var sk = STATE.skeleton;
+  var svg = document.getElementById('svg');
+  var ph  = document.getElementById('placeholder');
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  EDGE_EL = {};
+  var main = document.querySelector('.main');
+  if(!sk){
+    main.classList.remove('has-grid');
+    main.style.removeProperty('--grid-aspect');
+    svg.style.display='none'; ph.style.display=''; return;
+  }
+  ph.style.display='none'; svg.style.display='';
+
+  VIEW = computeTransform(sk);
+  main.classList.add('has-grid');
+  main.style.setProperty('--grid-aspect', VIEW.W + ' / ' + VIEW.H);
+  svg.setAttribute('viewBox', '0 0 ' + VIEW.W + ' ' + VIEW.H);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+  var defs = svgEl('defs');
+  var mk = svgEl('marker', {id:'arrow', viewBox:'0 0 10 10', refX:8, refY:5,
+                            markerWidth:6, markerHeight:6, orient:'auto'});
+  mk.appendChild(svgEl('path', {d:'M2 1L8 5L2 9', fill:'none',
+                                stroke:'context-stroke', 'stroke-width':1.6,
+                                'stroke-linecap':'round', 'stroke-linejoin':'round'}));
+  defs.appendChild(mk); svg.appendChild(defs);
+
+  // ── 背景の面（内側=黄 / 余白=灰）──
+  // 頂点がすべて表示対象の面だけ描く（枠だけ浮くのを防ぐ）
+  var gFace = svgEl('g');
+  sk.hexagons.concat(sk.triangles).filter(function(f){ return f.shown; }).forEach(function(f){
+    gFace.appendChild(svgEl('polygon', {
+      points: f.verts.map(function(v){ return VIEW.sx(v[0])+','+VIEW.sy(v[1]); }).join(' '),
+      fill: f.inner ? '#fff6dc' : '#f1efe8',
+      'fill-opacity': f.inner ? 0.85 : 0.55,
+      stroke: '#e5e4dc', 'stroke-width': 0.5
+    }));
+  });
+  svg.appendChild(gFace);
+
+  // ── 有向辺（往復が平行に並ぶ）──
+  // 台数の観測が不要な辺も薄く描く。行そのものは解析に必要（車線数・道路長・β を
+  // 内側の τ が参照するため）で、クリックすれば地図の値で精緻化もできる。
+  var gEdge = svgEl('g');
+  sk.edges.forEach(function(e){
+    var G = edgeGeometry(e), st = edgeStyle(e);
+    var line = svgEl('line', {x1:G.sx, y1:G.sy, x2:G.ex, y2:G.ey,
+      stroke:st.stroke, 'stroke-width':st.width, opacity:st.opacity,
+      'marker-end': e.required ? 'url(#arrow)' : null,
+      'stroke-dasharray': st.dash || (e.forward ? null : '5 3')});
+    var hit = svgEl('line', {x1:G.sx, y1:G.sy, x2:G.ex, y2:G.ey,
+      stroke:'transparent', 'stroke-width':11, style:'cursor:pointer'});
+    hit.addEventListener('click', function(){ selectEdge(e.id); });
+
+    var lx = G.sx + (G.ex-G.sx)*0.34 + G.nx*9;
+    var ly = G.sy + (G.ey-G.sy)*0.34 + G.ny*9;
+    var label = svgEl('text', {x:lx, y:ly, 'text-anchor':'middle', dy:3,
+      'font-size':9, 'font-weight':600, fill:C_DONE,
+      stroke:'#fff', 'stroke-width':2.6, 'paint-order':'stroke',
+      style:'cursor:pointer;pointer-events:none'});
+    gEdge.appendChild(line); gEdge.appendChild(label); gEdge.appendChild(hit);
+    EDGE_EL[e.id] = {line:line, hit:hit, label:label, edge:e};
+  });
+  svg.appendChild(gEdge);
+
+  // ── 交差点（表示する辺の端点になっているものだけ）──
+  var gNode = svgEl('g');
+  sk.nodes.filter(function(n){ return n.shown; }).forEach(function(n){
+    var g = svgEl('g', {transform:'translate('+VIEW.sx(n.x)+','+VIEW.sy(n.y)+')'});
+    g.appendChild(svgEl('circle', {r:11, fill:NODE_COLOR[n.type] || '#888',
+                                   opacity:n.inner ? 1 : 0.55}));
+    var t = svgEl('text', {'text-anchor':'middle', dy:3.6, 'font-size':10, fill:'#fff'});
+    t.textContent = n.type;
+    g.appendChild(t);
+    gNode.appendChild(g);
+  });
+  svg.appendChild(gNode);
+
+  refreshEdges();
+}
+
+function refreshEdges(){
+  Object.keys(EDGE_EL).forEach(function(id){
+    var o = EDGE_EL[id], st = edgeStyle(o.edge), v = STATE.entries[id];
+    o.line.setAttribute('stroke', st.stroke);
+    o.line.setAttribute('stroke-width', st.width);
+    o.line.setAttribute('opacity', st.opacity);
+    var dash = st.dash || (o.edge.forward ? null : '5 3');
+    if(dash) o.line.setAttribute('stroke-dasharray', dash);
+    else o.line.removeAttribute('stroke-dasharray');
+    o.label.textContent = (v && v.count !== '' && v.count !== null && v.count !== undefined)
+      ? Math.round(v.count) : '';
+    o.label.setAttribute('fill', SELECTED === id ? C_SEL : C_DONE);
+  });
+}
+
+// ══════════════════════════════════════════════════════════
+//  入力パネル
+//  往復は同じ調査で同時に数えるので、2方向をまとめて編集する。
+//  現地で数えるのは「台数」なので、率ではなく台数を入力させ、
+//  β はその場で計算して表示する（入力ミスに気づけるようにするため）。
+// ══════════════════════════════════════════════════════════
+var EDIT = null;    // { pair:[edgeA, edgeB], focus:edgeId }
+
+function nodeLabel(n){ return n.type + '(' + n.i + ',' + n.j + ')'; }
+function num(v){ var x = parseFloat(v); return isFinite(x) ? x : null; }
+
+// ── インフラの既定値 ────────────────────────────────────────
+// 現地で数えるのは通過台数・右折・左折の3つだけ。残り（車線数・レーン・道路長）は
+// 道路の形であって、調査のたびに変わらず、地区内の大半で同じ値になる。
+// これを毎回打たせると入力の6割が形の入力になってしまうので、
+//   ① サイドバーの「標準の道路」を初期値にする
+//   ② 直前に入力した道路の形を引き継ぐ（似た道路が続くとき効く）
+// の順で埋めた状態でパネルを開く。違うところだけ直せばよい。
+var LAST_INFRA = null;   // 直前に保存した道路の形
+
+function stdInfra(){
+  function g(id, fallback){
+    var v = num(document.getElementById(id).value);
+    return (v != null && v > 0) ? v : fallback;
+  }
+  return { road_length:g('stdRoadLen',0.45), lanes:g('stdLanes',2),
+           lane_R:g('stdLaneR',1), lane_L:g('stdLaneL',1), lane_S:g('stdLaneS',2) };
+}
+
+function carryForwardOn(){
+  var el = document.getElementById('carryForward');
+  return !el || el.checked;
+}
+
+/** その辺の入力欄に最初から入れておく形。実測済みならそれを最優先。 */
+function infraFor(edgeId){
+  var v = STATE.entries[edgeId];
+  if(v && v.lanes != null) return v;                 // 既に入力済み → そのまま
+  if(carryForwardOn() && LAST_INFRA) return LAST_INFRA;
+  return stdInfra();
+}
+
+function rememberInfra(v){
+  LAST_INFRA = { road_length:v.road_length, lanes:v.lanes,
+                 lane_R:v.lane_R, lane_L:v.lane_L, lane_S:v.lane_S };
+}
+
+function dirFields(e, focus){
+  var saved = STATE.entries[e.id];
+  var inf = infraFor(e.id);
+  // 観測値（台数）は絶対に埋めない。埋めてよいのは道路の形だけ。
+  var v = saved || { lanes:inf.lanes, lane_R:inf.lane_R, lane_L:inf.lane_L, lane_S:inf.lane_S };
+  var prefilled = !saved;
+  var s = e.source, t = e.target;
+  return ''
+   + '<div class="dir' + (focus ? ' focus' : '') + '" data-edge="' + e.id + '">'
+   + '  <h4>' + (e.forward ? '上り' : '下り') + '　' + nodeLabel(s) + ' → ' + nodeLabel(t)
+   + '　road' + e.road
+   + (STATE.entries[e.id] ? '<span class="done">入力済み</span>' : '') + '</h4>'
+   + '  <div class="dir-section-label observation">観測値</div>'
+   + '  <div class="fr"><label>通過台数</label>'
+   + '    <input type="number" min="0" step="1" data-f="count" value="' + (v.count != null ? v.count : '') + '">'
+   + '    <span class="unit">台</span></div>'
+   + '  <div class="fr"><label>右折台数</label>'
+   + '    <input type="number" min="0" step="1" data-f="turn_R" value="' + (v.turn_R != null ? v.turn_R : '') + '">'
+   + '    <span class="beta" data-b="R">—</span></div>'
+   + '  <div class="fr"><label>左折台数</label>'
+   + '    <input type="number" min="0" step="1" data-f="turn_L" value="' + (v.turn_L != null ? v.turn_L : '') + '">'
+   + '    <span class="beta" data-b="L">—</span></div>'
+   + '  <div class="straight" data-s>直進率 <b>—</b></div>'
+   + '  <div class="dir-section-label optional">沿道の出入り（任意・測っていなければ空欄のまま）</div>'
+   + '  <div class="fr"><label>沿道から入った車</label>'
+   + '    <input type="number" min="0" step="1" data-f="source_count" value="' + (v.source_count != null ? v.source_count : '') + '" placeholder="未調査">'
+   + '    <span class="unit">台</span></div>'
+   + '  <div class="fr"><label>沿道へ出た車</label>'
+   + '    <input type="number" min="0" step="1" data-f="sink_count" value="' + (v.sink_count != null ? v.sink_count : '') + '" placeholder="未調査">'
+   + '    <span class="unit">台</span></div>'
+   + '  <div class="dir-section-label infrastructure">道路の形'
+   + (prefilled ? '<span class="prefill-tag">標準の値を入れてあります</span>' : '') + '</div>'
+   + '  <div class="fr"><label>車線数（片側）</label>'
+   + '    <input type="number" min="1" step="1" data-f="lanes" value="' + (v.lanes != null ? v.lanes : '') + '">'
+   + '    <span class="unit">本</span></div>'
+   + '  <div class="lanes"><label style="font-size:var(--fs-sm);color:var(--muted)">右折/左折/直進レーン</label>'
+   + '    <input type="number" min="1" step="1" data-f="lane_R" value="' + (v.lane_R != null ? v.lane_R : '') + '">'
+   + '    <input type="number" min="1" step="1" data-f="lane_L" value="' + (v.lane_L != null ? v.lane_L : '') + '">'
+   + '    <input type="number" min="1" step="1" data-f="lane_S" value="' + (v.lane_S != null ? v.lane_S : '') + '">'
+   + '  </div>'
+   + '  <div class="lanes"><span></span><span class="cap">右</span><span class="cap">左</span><span class="cap">直</span></div>'
+   + '</div>';
+}
+
+function openEditor(id){
+  var o = EDGE_EL[id]; if(!o) return;
+  var e = o.edge;
+  var opp = e.opposite && EDGE_EL[e.opposite] ? EDGE_EL[e.opposite].edge : null;
+  // 常に「上り→下り」の順で並べる（毎回同じ配置のほうが入力が速い）
+  var pair = opp ? (e.forward ? [e, opp] : [opp, e]) : [e];
+  EDIT = { pair: pair, focus: id };
+
+  document.getElementById('editTitle').textContent =
+    nodeLabel(pair[0].source) + ' ⇄ ' + nodeLabel(pair[0].target);
+  document.getElementById('editDirs').innerHTML =
+    pair.map(function(x){ return dirFields(x, x.id === id); }).join('');
+
+  var rl = null;
+  pair.forEach(function(x){
+    var v = STATE.entries[x.id];
+    if(v && v.road_length != null) rl = v.road_length;
+  });
+  // 未入力なら「標準の道路」か直前の道路の長さを入れておく（0.45km を毎回打たせない）
+  if(rl == null) rl = infraFor(id).road_length;
+  document.getElementById('fRoadLen').value = rl != null ? rl : '';
+  document.getElementById('editCopy').style.display = pair.length > 1 ? '' : 'none';
+  document.getElementById('editErr').textContent = '';
+  document.getElementById('editPanel').style.display = '';
+  document.querySelector('.main').classList.add('editing');
+
+  wireEditorInputs();
+  recalcEditor();
+  var first = document.querySelector('.dir[data-edge="' + id + '"] input[data-f="count"]');
+  if(first){ first.focus(); first.select(); }
+}
+
+function closeEditor(){
+  EDIT = null; SELECTED = null;
+  document.getElementById('editPanel').style.display = 'none';
+  document.querySelector('.main').classList.remove('editing');
+  refreshEdges();
+}
+
+function wireEditorInputs(){
+  var panel = document.getElementById('editPanel');
+  panel.querySelectorAll('input').forEach(function(inp){
+    inp.addEventListener('input', recalcEditor);
+    inp.addEventListener('keydown', function(ev){
+      if(ev.key === 'Enter'){ ev.preventDefault(); saveEditor(true); }
+    });
+  });
+}
+
+function readDir(el){
+  var out = {};
+  el.querySelectorAll('input[data-f]').forEach(function(inp){
+    out[inp.getAttribute('data-f')] = num(inp.value);
+  });
+  return out;
+}
+
+// 入力のたびに β と直進率を出し、矛盾があればその場で赤くする
+function recalcEditor(){
+  if(!EDIT) return;
+  var errs = [];
+  document.querySelectorAll('#editDirs .dir').forEach(function(el){
+    var v = readDir(el);
+    var bR = el.querySelector('[data-b="R"]'), bL = el.querySelector('[data-b="L"]');
+    var st = el.querySelector('[data-s]');
+    var cnt = v.count, tr = v.turn_R, tl = v.turn_L;
+    var inR = el.querySelector('[data-f="turn_R"]'), inL = el.querySelector('[data-f="turn_L"]');
+    inR.classList.remove('bad'); inL.classList.remove('bad');
+
+    if(cnt && cnt > 0 && tr != null && tl != null){
+      var r = tr/cnt, l = tl/cnt, s = 1 - r - l;
+      bR.textContent = r.toFixed(3); bL.textContent = l.toFixed(3);
+      var over = (tr + tl) > cnt;
+      bR.classList.toggle('bad', over); bL.classList.toggle('bad', over);
+      if(over){
+        inR.classList.add('bad'); inL.classList.add('bad');
+        st.innerHTML = '<b class="bad">右折 + 左折が通過台数を超えています</b>';
+        errs.push(el.querySelector('h4').textContent.split('　')[0] + ': 右左折の合計が通過台数を超過');
+      } else {
+        st.innerHTML = '直進率 <b>' + s.toFixed(3) + '</b>（直進 ' + Math.round(cnt - tr - tl) + ' 台）';
+      }
+    } else {
+      bR.textContent = '—'; bL.textContent = '—';
+      bR.classList.remove('bad'); bL.classList.remove('bad');
+      st.innerHTML = '直進率 <b>—</b>';
+    }
+  });
+  document.getElementById('editErr').textContent = errs.join(' / ');
+  return errs;
+}
+
+function saveEditor(advance){
+  if(!EDIT) return;
+  var rl = num(document.getElementById('fRoadLen').value);
+  var errs = recalcEditor() || [];
+  var els = Array.prototype.slice.call(document.querySelectorAll('#editDirs .dir'));
+
+  // 「何も入れていない方向」は保存しない（片方だけ入力できるように）
+  var targets = els.filter(function(el){ return readDir(el).count != null; });
+  if(!targets.length){ document.getElementById('editErr').textContent = '通過台数を入力してください'; return; }
+  if(rl == null || rl <= 0){ document.getElementById('editErr').textContent = '道路長を入力してください（0より大きい値）'; return; }
+
+  for(var i=0;i<targets.length;i++){
+    var v = readDir(targets[i]);
+    if(v.count < 0){ errs.push('通過台数は0以上'); break; }
+    if(v.turn_R == null || v.turn_L == null){ errs.push('右折・左折の台数を入力してください'); break; }
+    var hasSource = v.source_count != null, hasSink = v.sink_count != null;
+    if(hasSource !== hasSink){ errs.push('ソースとシンクは両方入力するか、両方空欄にしてください'); break; }
+    if(hasSource && (v.source_count < 0 || v.sink_count < 0)){
+      errs.push('ソース・シンク台数は0以上'); break;
+    }
+    if(!(v.lanes >= 1)){ errs.push('車線数は1以上'); break; }
+    if(!(v.lane_R >= 1 && v.lane_L >= 1 && v.lane_S >= 1)){ errs.push('右折/左折/直進レーンは1以上'); break; }
+  }
+  if(errs.length){ document.getElementById('editErr').textContent = errs[0]; return; }
+
+  var lastSaved = null;
+  targets.forEach(function(el){
+    var v = readDir(el); v.road_length = rl;
+    STATE.entries[el.getAttribute('data-edge')] = v;
+    lastSaved = v;
+  });
+  if(lastSaved) rememberInfra(lastSaved);      // 次の道路へ形を引き継ぐ
+  refreshEdges(); updateProgress();
+  closeEditor();
+
+  // 連続入力: 保存したら次の未入力へそのまま進む（地図から探し直さない）
+  if(advance !== false){
+    var next = nextUnfilled();
+    if(next){
+      selectEdge(next);
+      toast('保存しました。残り ' + remainingCount() + ' 本', 'ok');
+    }else{
+      toast('保存しました。必要な道路をすべて入力しました', 'ok');
+    }
+  }else{
+    toast('保存しました（' + targets.length + ' 方向）', 'ok');
+  }
+}
+
+/** まだ入力されていない必須の辺のうち、次に開くべきものを返す。 */
+function nextUnfilled(fromId){
+  var eds = requiredEdges();
+  if(!eds.length) return null;
+  var start = 0;
+  if(fromId){
+    for(var k=0;k<eds.length;k++){ if(eds[k].id === fromId){ start = k+1; break; } }
+  }
+  // 現在位置の次から探し、末尾まで無ければ先頭に戻る
+  for(var n=0;n<eds.length;n++){
+    var e = eds[(start+n) % eds.length];
+    if(!STATE.entries[e.id]) return e.id;
+  }
+  return null;
+}
+
+function remainingCount(){
+  return requiredEdges().filter(function(e){ return !STATE.entries[e.id]; }).length;
+}
+
+function goNextUnfilled(){
+  var id = nextUnfilled(SELECTED);
+  if(!id){ toast('未入力の道路はありません', 'ok'); return; }
+  selectEdge(id);
+  var el = document.getElementById('editPanel');
+  if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function clearEditor(){
+  if(!EDIT) return;
+  EDIT.pair.forEach(function(e){ delete STATE.entries[e.id]; });
+  refreshEdges(); updateProgress();
+  toast('この道路の入力をクリアしました', 'warn');
+  closeEditor();
+}
+
+function copyForward(){
+  if(!EDIT || EDIT.pair.length < 2) return;
+  var els = document.querySelectorAll('#editDirs .dir');
+  var src = readDir(els[0]);
+  els[1].querySelectorAll('input[data-f]').forEach(function(inp){
+    var k = inp.getAttribute('data-f');
+    if(src[k] != null) inp.value = src[k];
+  });
+  recalcEditor();
+  toast('上りの値を下りにコピーしました（台数は必ず確認してください）', 'warn');
+}
+
+function selectEdge(id){
+  if(SELECTED === id){ closeEditor(); return; }
+  SELECTED = id;
+  refreshEdges();
+  openEditor(id);
+}
+
+document.getElementById('editClose').addEventListener('click', closeEditor);
+document.getElementById('editSave').addEventListener('click', function(){ saveEditor(true); });
+document.getElementById('editSaveStay').addEventListener('click', function(){ saveEditor(false); });
+document.getElementById('editClear').addEventListener('click', clearEditor);
+document.getElementById('editCopy').addEventListener('click', copyForward);
+document.addEventListener('keydown', function(ev){
+  if(ev.key === 'Escape' && EDIT) closeEditor();
+});
+
+// ── 骨組みの読み込みと格子作成 ──
+function buildLattice(){
+  var d = +document.getElementById('displaySelect').value;
+  var m = +document.getElementById('marginSelect').value;
+  if(durationHours() === null){ toast('観測時間帯を入力してください','warn'); return; }
+
+  var info = SKELETON_INDEX && SKELETON_INDEX[skeletonKey(d,m)];
+  if(!info){
+    toast('この組み合わせの骨組みがありません。\npython src/make_skeleton.py --display '
+          + d + ' --margin ' + m + ' を実行してください', 'error');
+    return;
+  }
+  var btn = document.getElementById('buildBtn');
+  btn.disabled = true; btn.textContent = '読み込み中…';
+
+  fetch('skeleton/' + info.file)
+    .then(function(r){ if(!r.ok) throw new Error('骨組みを読めません'); return r.json(); })
+    .then(function(sk){
+      var had = Object.keys(STATE.entries).length;
+      STATE.skeleton = sk;
+      STATE.meta.display = d; STATE.meta.margin = m;
+      // 範囲を変えると辺のIDが変わるため、入力済みの値は引き継がない
+      if(had){ STATE.entries = {}; toast('範囲を変更したため入力内容をクリアしました','warn'); }
+      SELECTED = null;
+      if(EDIT) closeEditor();
+      renderLattice();
+      updateProgress();
+      var req = sk.edges.filter(function(e){ return e.required; }).length;
+      var skip = sk.edges.length - req;
+      toast('格子を作成しました（記入する有向道路 ' + req + ' 本'
+            + (skip ? ' / 不要な ' + skip + ' 本は非表示' : '') + '）', 'ok');
+    })
+    .catch(function(err){ toast(String(err.message || err), 'error'); })
+    .finally(function(){ btn.disabled = false; btn.textContent = '格子を作成'; });
+}
+
+document.getElementById('buildBtn').addEventListener('click', buildLattice);
+
+// ── 検査・CSV保存・再読込・解析実行 ──
+var CSV_COLUMNS = [
+  'dataset_name','start_time','end_time','display','margin',
+  'node_type','i','j','road','count','turn_R','turn_L','source_count','sink_count','duration_h','lanes',
+  'beta_R','beta_L','beta_S','road_length','lane_R','lane_L','lane_S','estimated'
+];
+
+function setActionStatus(message, tone){
+  var el = document.getElementById('actionStatus');
+  el.textContent = message;
+  el.style.color = tone === 'error' ? 'var(--bad)'
+    : tone === 'ok' ? 'var(--good)' : 'var(--muted)';
+}
+
+function requiredEdges(){
+  return STATE.skeleton ? STATE.skeleton.edges.filter(function(e){ return e.required; }) : [];
+}
+
+function validateState(){
+  var errors = [], missing = [], unmeasuredSourceSink = [];
+  if(!STATE.skeleton) return {ok:false, errors:['格子を作成してください'], missing:[], total:0, done:0};
+  var edges = requiredEdges();
+  edges.forEach(function(e){
+    var v = STATE.entries[e.id];
+    if(!v){ missing.push(e.id); return; }
+    if(!(isFinite(v.count) && v.count >= 0)) errors.push(e.id + ': 通過台数は0以上');
+    if(!(isFinite(v.turn_R) && v.turn_R >= 0 && isFinite(v.turn_L) && v.turn_L >= 0))
+      errors.push(e.id + ': 右折・左折台数は0以上');
+    else if(v.turn_R + v.turn_L > v.count + 1e-9)
+      errors.push(e.id + ': 右折＋左折が通過台数を超過');
+    var hasSource = v.source_count != null && isFinite(v.source_count);
+    var hasSink = v.sink_count != null && isFinite(v.sink_count);
+    if(hasSource !== hasSink) errors.push(e.id + ': ソースとシンクは両方入力または両方空欄');
+    else if(hasSource && (v.source_count < 0 || v.sink_count < 0))
+      errors.push(e.id + ': ソース・シンク台数は0以上');
+    else if(!hasSource) unmeasuredSourceSink.push(e.id);
+    if(!(isFinite(v.lanes) && v.lanes >= 1)) errors.push(e.id + ': 車線数は1以上');
+    if(!(isFinite(v.lane_R) && v.lane_R >= 1 && isFinite(v.lane_L) && v.lane_L >= 1
+      && isFinite(v.lane_S) && v.lane_S >= 1)) errors.push(e.id + ': 各方向のレーン数は1以上');
+    if(!(isFinite(v.road_length) && v.road_length > 0)) errors.push(e.id + ': 道路長は0より大きい値');
+  });
+  var h = durationHours();
+  if(!(h > 0)) errors.push('観測時間帯を正しく入力してください');
+  return {ok:missing.length === 0 && errors.length === 0,
+          errors:errors, missing:missing, unmeasuredSourceSink:unmeasuredSourceSink,
+          total:edges.length, done:edges.length-missing.length};
+}
+
+function showCheckResult(result, quiet){
+  if(result.ok){
+    var suffix = result.unmeasuredSourceSink && result.unmeasuredSourceSink.length
+      ? '（ソース／シンク未調査 ' + result.unmeasuredSourceSink.length + ' 本）' : '';
+    setActionStatus('検査完了：' + result.total + ' 本すべて解析できます。' + suffix,'ok');
+    if(!quiet) toast('検査完了：入力エラーはありません' + suffix,'ok');
+    return true;
+  }
+  var parts = [];
+  if(result.missing.length) parts.push('未入力 ' + result.missing.length + ' 本');
+  if(result.errors.length) parts.push('入力エラー ' + result.errors.length + ' 件');
+  setActionStatus('検査結果：' + parts.join(' / ') + '。修正してから解析してください。','error');
+  if(!quiet){
+    var detail = result.errors.length ? result.errors[0]
+      : '未入力の有向道路があります（進捗 ' + result.done + ' / ' + result.total + '）';
+    toast('検査で問題が見つかりました：' + detail,'error');
+  }
+  return false;
+}
+
+function csvEscape(value){
+  if(value === null || value === undefined) return '';
+  var s = String(value);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+}
+
+// ── 台数の観測が不要な辺の自動補完 ──────────────────────────
+// 「内側の結果に影響しない」のは *流量* だけで、その辺の車線数・道路長・β は
+// 隣接する内側の τ 計算に使われるため必ず要る。CSVから行ごと省くと
+// これらが既定値に落ちて内側の ε が最大17%ずれることを実測で確認した。
+// そこで台数は 0 のまま、幾何（車線数・道路長）は入力済みの中央値、
+// β は既定値 0.15/0.15/0.70 で補完した行を必ず出す。
+//
+// ★ 補完は誤差ゼロではない。省けるのは「台数」だけ。
+//   幾何とβは推定なので、余白が調査域と違う道路だとその分ずれる。
+//   実測（3×3・判定閾値付近）: 中央値 0.3% / 90%点 3% / 最悪 24%、
+//   未病判定が反転したのは内側の 2.5%。tests/test_halo_geometry.py 参照。
+//   精度が要るときは、薄く描かれた辺をクリックして
+//   地図から読める車線数と道路長だけでも実値を入れると最悪誤差が 15% まで下がる。
+var AUTO_BETA_R = 0.15, AUTO_BETA_L = 0.15;
+var AUTO_FALLBACK = { road_length:1.0, lanes:2, lane_R:1, lane_L:1, lane_S:2 };
+
+function medianOf(values){
+  var v = values.filter(function(x){ return typeof x === 'number' && isFinite(x) && x > 0; })
+                .sort(function(a,b){ return a-b; });
+  if(!v.length) return null;
+  var m = Math.floor(v.length/2);
+  return v.length % 2 ? v[m] : (v[m-1] + v[m]) / 2;
+}
+
+// 入力済みの値から代表値を作る。1本も無ければ既定値にフォールバックする。
+function autoGeometry(){
+  var vals = Object.keys(STATE.entries).map(function(k){ return STATE.entries[k]; });
+  var g = {};
+  ['road_length','lanes','lane_R','lane_L','lane_S'].forEach(function(k){
+    var m = medianOf(vals.map(function(v){ return v[k]; }));
+    g[k] = m != null ? m : AUTO_FALLBACK[k];
+  });
+  // 車線数は整数に寄せる（中央値が .5 になりうるため）
+  ['lanes','lane_R','lane_L','lane_S'].forEach(function(k){ g[k] = Math.max(1, Math.round(g[k])); });
+  return g;
+}
+
+function autoFilledEdges(){
+  return STATE.skeleton ? STATE.skeleton.edges.filter(function(e){ return !e.required; }) : [];
+}
+
+function makeCsv(){
+  STATE.meta.name = document.getElementById('nameInput').value.trim();
+  STATE.meta.start = document.getElementById('startTime').value;
+  STATE.meta.end = document.getElementById('endTime').value;
+  var h = durationHours();
+  var rows = [CSV_COLUMNS.join(',')];
+  var meta = {dataset_name:STATE.meta.name, start_time:STATE.meta.start, end_time:STATE.meta.end,
+              display:STATE.meta.display, margin:STATE.meta.margin, duration_h:h};
+
+  // estimated=1 は「この行は実測でなく推定」の印。
+  // Python 側がこの印を見て、判定がその推定に左右される辺を「保留」にする。
+  function push(e, v, bR, bL, estimated){
+    var row = Object.assign({}, meta, {
+      node_type:e.source.type, i:e.source.i, j:e.source.j, road:e.road,
+      count:v.count, turn_R:v.turn_R, turn_L:v.turn_L,
+      source_count:v.source_count, sink_count:v.sink_count, lanes:v.lanes,
+      beta_R:bR, beta_L:bL, beta_S:Math.max(0, 1-bR-bL), road_length:v.road_length,
+      lane_R:v.lane_R, lane_L:v.lane_L, lane_S:v.lane_S,
+      estimated: estimated ? 1 : 0
+    });
+    rows.push(CSV_COLUMNS.map(function(k){ return csvEscape(row[k]); }).join(','));
+  }
+
+  requiredEdges().forEach(function(e){
+    var v = STATE.entries[e.id];
+    if(!v) return;
+    push(e, v, v.count > 0 ? v.turn_R/v.count : 0, v.count > 0 ? v.turn_L/v.count : 0, false);
+  });
+
+  // 台数の観測が不要な辺も、幾何と β を持たせて必ず出力する
+  var g = autoGeometry();
+  autoFilledEdges().forEach(function(e){
+    var v = STATE.entries[e.id];          // 手で精緻化された場合はそれを優先（＝実測扱い）
+    if(v){ push(e, v, v.count > 0 ? v.turn_R/v.count : 0, v.count > 0 ? v.turn_L/v.count : 0, false); return; }
+    push(e, {count:0, turn_R:0, turn_L:0, source_count:'', sink_count:'',
+             lanes:g.lanes, road_length:g.road_length,
+             lane_R:g.lane_R, lane_L:g.lane_L, lane_S:g.lane_S},
+         AUTO_BETA_R, AUTO_BETA_L, true);
+  });
+  return rows.join('\r\n') + '\r\n';
+}
+
+function parseCsv(text){
+  text = String(text || '').replace(/^\uFEFF/,'');
+  var table=[], row=[], field='', quoted=false;
+  for(var i=0;i<text.length;i++){
+    var ch=text[i];
+    if(quoted){
+      if(ch==='"' && text[i+1]==='"'){ field+='"'; i++; }
+      else if(ch==='"') quoted=false;
+      else field+=ch;
+    } else if(ch==='"') quoted=true;
+    else if(ch===','){ row.push(field); field=''; }
+    else if(ch==='\n'){
+      row.push(field.replace(/\r$/,'')); field='';
+      if(row.some(function(x){ return x !== ''; })) table.push(row);
+      row=[];
+    } else field+=ch;
+  }
+  if(field!=='' || row.length){ row.push(field.replace(/\r$/,'')); table.push(row); }
+  if(!table.length) throw new Error('CSVが空です');
+  var headers=table.shift().map(function(h){ return h.trim(); });
+  return table.map(function(cells){
+    var out={}; headers.forEach(function(h,k){ out[h]=cells[k] == null ? '' : cells[k]; }); return out;
+  });
+}
+
+function nval(row, key, fallback){
+  var raw = row[key];
+  if(raw === '' || raw === null || raw === undefined) return fallback;
+  var v = Number(raw); return isFinite(v) ? v : fallback;
+}
+
+function inferSkeletonInfo(rows){
+  var first = rows[0] || {};
+  var d = Math.round(nval(first,'display',0)), m = Math.round(nval(first,'margin',0));
+  if(d && m && SKELETON_INDEX[skeletonKey(d,m)]) return SKELETON_INDEX[skeletonKey(d,m)];
+  var maxCoord = -1;
+  rows.forEach(function(r){
+    var i=nval(r,'i',-1), j=nval(r,'j',-1);
+    if(i>=0) maxCoord=Math.max(maxCoord,i); if(j>=0) maxCoord=Math.max(maxCoord,j);
+  });
+  var master=maxCoord+1, candidates=Object.keys(SKELETON_INDEX).map(function(k){ return SKELETON_INDEX[k]; })
+    .filter(function(x){ return x.master===master; });
+  return candidates.find(function(x){ return x.margin===1; }) || candidates[0] || null;
+}
+
+function applyLoadedRows(rows, fileName){
+  if(!SKELETON_INDEX) throw new Error('格子の目録をまだ読み込んでいます。少し待って再度お試しください');
+  var info=inferSkeletonInfo(rows);
+  if(!info) throw new Error('CSVの格子サイズを判定できません');
+  return fetch('skeleton/' + info.file)
+    .then(function(r){ if(!r.ok) throw new Error('格子の骨組みを読めません'); return r.json(); })
+    .then(function(sk){
+      if(EDIT) closeEditor();
+      STATE.skeleton=sk; STATE.entries={};
+      STATE.meta.display=info.display; STATE.meta.margin=info.margin;
+      var first=rows[0] || {};
+      STATE.meta.name=(first.dataset_name || fileName.replace(/\.csv$/i,'')).trim();
+      STATE.meta.start=(first.start_time || '07:30').trim();
+      STATE.meta.end=(first.end_time || '').trim();
+      if(!STATE.meta.end){
+        var dur=nval(first,'duration_h',1), p=STATE.meta.start.split(':').map(Number);
+        var total=((p[0]||0)*60+(p[1]||0)+Math.round(dur*60))%(24*60);
+        STATE.meta.end=String(Math.floor(total/60)).padStart(2,'0')+':'+String(total%60).padStart(2,'0');
+      }
+      var byId={}; sk.edges.forEach(function(e){ byId[e.id]=e; });
+      var skipped=0;
+      rows.forEach(function(row){
+        if(row.direction && String(row.direction).toLowerCase()!=='out') return;
+        var type=String(row.node_type||'').trim().toUpperCase();
+        var i=Math.round(nval(row,'i',NaN)), j=Math.round(nval(row,'j',NaN)), road=Math.round(nval(row,'road',NaN));
+        var id=type+'_'+i+'_'+j+'_road'+road, edge=byId[id];
+        if(!edge || !edge.required){ skipped++; return; }
+        var count=nval(row,'count',NaN), bR=nval(row,'beta_R',0), bL=nval(row,'beta_L',0);
+        if(!isFinite(count)){ skipped++; return; }
+        var turnR=nval(row,'turn_R',Math.round(count*bR));
+        var turnL=nval(row,'turn_L',Math.round(count*bL));
+        STATE.entries[id]={
+          count:count, turn_R:turnR, turn_L:turnL,
+          source_count:nval(row,'source_count',null), sink_count:nval(row,'sink_count',null),
+          lanes:nval(row,'lanes',nval(row,'lane_R',1)+nval(row,'lane_L',1)+nval(row,'lane_S',1)),
+          lane_R:nval(row,'lane_R',1), lane_L:nval(row,'lane_L',1), lane_S:nval(row,'lane_S',1),
+          road_length:nval(row,'road_length',NaN)
+        };
+      });
+      document.getElementById('displaySelect').value=info.display; rebuildSelectors();
+      document.getElementById('marginSelect').value=info.margin; updateScaleNote();
+      document.getElementById('nameInput').value=STATE.meta.name;
+      document.getElementById('startTime').value=STATE.meta.start;
+      document.getElementById('endTime').value=STATE.meta.end;
+      updateDuration(); SELECTED=null; renderLattice(); updateProgress();
+      var result=validateState(); showCheckResult(result,true);
+      toast('CSVを読み込みました（'+Object.keys(STATE.entries).length+' 本）','ok');
+      if(skipped) console.info('表示・解析対象外のCSV行をスキップ:',skipped);
+    });
+}
+
+function downloadCsv(){
+  var result=validateState();
+  if(!showCheckResult(result,true) && !Object.keys(STATE.entries).length){ toast('保存する入力がありません','error'); return; }
+  var blob=new Blob(['\uFEFF'+makeCsv()],{type:'text/csv;charset=utf-8'});
+  var url=URL.createObjectURL(blob), a=document.createElement('a');
+  var base=(document.getElementById('nameInput').value.trim() || 'kagome_observation')
+    .replace(/[\\/:*?"<>|]/g,'_');
+  a.href=url; a.download=base+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+  setActionStatus('CSVを保存しました。入力は後から再開できます。','ok');
+  toast('CSVをダウンロードしました','ok');
+}
+
+function analyzeInput(){
+  var result=validateState();
+  if(!showCheckResult(result,false)) return;
+  var btn=document.getElementById('analyzeBtn'), old=btn.textContent;
+  btn.disabled=true; btn.textContent='解析中…'; setActionStatus('解析中です。しばらくお待ちください。','info');
+  fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'text/csv;charset=utf-8'},body:makeCsv()})
+    .then(function(res){ return res.json().then(function(j){ return {ok:res.ok,data:j}; }); })
+    .then(function(out){
+      if(!out.ok) throw new Error(out.data.error || '解析に失敗しました');
+      out.data.meta=out.data.meta || {};
+      out.data.meta.input={name:STATE.meta.name,start:STATE.meta.start,end:STATE.meta.end,
+                           display:STATE.meta.display,margin:STATE.meta.margin};
+      sessionStorage.setItem('kagome-input-analysis-v1',JSON.stringify({
+        data:out.data,name:STATE.meta.name || '観測データ',display:STATE.meta.display
+      }));
+      setActionStatus('解析完了：結果画面へ移動します。','ok');
+      location.href='index.html?source=input';
+    })
+    .catch(function(err){
+      setActionStatus('解析できませんでした。入力内容または解析プログラムを確認してください。','error');
+      toast('解析エラー：'+String(err.message || err),'error');
+      btn.disabled=false; btn.textContent=old;
+    });
+}
+
+document.getElementById('checkBtn').addEventListener('click',function(){ showCheckResult(validateState(),false); });
+document.getElementById('downloadBtn').addEventListener('click',downloadCsv);
+document.getElementById('analyzeBtn').addEventListener('click',analyzeInput);
+document.getElementById('loadBtn').addEventListener('click', function(){
+  document.getElementById('loadInput').click();
+});
+document.getElementById('loadInput').addEventListener('change', function(){
+  var file=this.files && this.files[0];
+  if(!file){ this.value=''; return; }
+  var reader=new FileReader();
+  reader.onload=function(){
+    try{
+      var rows=parseCsv(reader.result);
+      applyLoadedRows(rows,file.name).catch(function(err){ toast('CSV読込エラー：'+String(err.message||err),'error'); });
+    }catch(err){ toast('CSV読込エラー：'+String(err.message||err),'error'); }
+  };
+  reader.onerror=function(){ toast('CSVファイルを読み込めませんでした','error'); };
+  reader.readAsText(file,'utf-8');
+  this.value = '';
+});
+
+// ────────────────────────────────────────────────────────────
+// U8 自動下書き保存
+//   現場で入力途中にブラウザが落ちる／リロードされると全部消える。
+//   CSV のダウンロードは「意識して押す」操作なので保険にならない。
+//   そこで entries と meta をこの端末の localStorage に自動保存し、
+//   次に開いたときは黙って復元する（復元しないと保険の意味がない）。
+//
+//   localStorage は端末とブラウザに紐づく。共有もバックアップもされないので、
+//   これは CSV の代わりではなく、CSV を押すまでの間の保険。
+// ────────────────────────────────────────────────────────────
+var DRAFT_KEY = 'kagome-input-draft-v1';
+var DRAFT_TIMER = null;
+var DRAFT_OFF = false;    // 復元中は保存しない（自分の書き戻しで壊さないため）
+
+function draftStore(){
+  try{ var s = window.localStorage; s.getItem(DRAFT_KEY); return s; }
+  catch(e){ return null; }   // プライベートモード等では null
+}
+
+function setDraftStatus(text){ document.getElementById('draftStatus').textContent = text; }
+
+function saveDraft(){
+  var s = draftStore();
+  if(!s || DRAFT_OFF) return;
+  if(!STATE.skeleton){ return; }
+  var n = Object.keys(STATE.entries).length;
+  if(!n){ clearDraft(true); return; }   // 空なら残さない
+  try{
+    s.setItem(DRAFT_KEY, JSON.stringify({
+      v: 1,
+      savedAt: new Date().toISOString(),
+      meta: STATE.meta,
+      std: stdInfra(),                       // 「標準の道路」も一緒に覚える
+      carry: carryForwardOn(),
+      entries: STATE.entries
+    }));
+    var t = new Date();
+    setDraftStatus('下書きを自動保存しました（' + n + ' 本／'
+      + String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0') + '）');
+    document.getElementById('draftClearBtn').style.display = '';
+  }catch(e){
+    // 容量超過など。入力は続行できるので止めない。
+    setDraftStatus('下書きを保存できませんでした。CSVでこまめに保存してください。');
+  }
+}
+
+function scheduleSave(){
+  if(DRAFT_TIMER) clearTimeout(DRAFT_TIMER);
+  DRAFT_TIMER = setTimeout(saveDraft, 400);
+}
+
+function clearDraft(quiet){
+  var s = draftStore();
+  if(s){ try{ s.removeItem(DRAFT_KEY); }catch(e){} }
+  document.getElementById('draftClearBtn').style.display = 'none';
+  if(!quiet) setDraftStatus('下書きを破棄しました。');
+  else setDraftStatus('下書きはこの端末に自動保存されます。');
+}
+
+function readDraft(){
+  var s = draftStore();
+  if(!s) return null;
+  try{
+    var d = JSON.parse(s.getItem(DRAFT_KEY) || 'null');
+    if(!d || d.v !== 1 || !d.entries || !d.meta) return null;
+    if(!Object.keys(d.entries).length) return null;
+    return d;
+  }catch(e){ return null; }
+}
+
+// 起動時の復元。骨組みを読み直してから entries を戻す。
+function restoreDraft(){
+  var d = readDraft();
+  if(!d) return Promise.resolve(false);
+  var key = skeletonKey(d.meta.display, d.meta.margin);
+  var info = SKELETON_INDEX && SKELETON_INDEX[key];
+  if(!info){
+    // 骨組みの構成が変わった場合。辺IDが対応しないので復元しない。
+    setDraftStatus('保存されていた下書きは今の格子構成と一致しないため復元できません。');
+    return Promise.resolve(false);
+  }
+  return fetch('skeleton/' + info.file)
+    .then(function(r){ if(!r.ok) throw new Error('骨組みを読めません'); return r.json(); })
+    .then(function(sk){
+      DRAFT_OFF = true;
+      var valid = {}; var dropped = 0;
+      var ids = {}; sk.edges.forEach(function(e){ ids[e.id] = true; });
+      Object.keys(d.entries).forEach(function(id){
+        if(ids[id]) valid[id] = d.entries[id]; else dropped++;
+      });
+      STATE.skeleton = sk;
+      STATE.meta = d.meta;
+      STATE.entries = valid;
+      document.getElementById('displaySelect').value = d.meta.display; rebuildSelectors();
+      document.getElementById('marginSelect').value = d.meta.margin; updateScaleNote();
+      document.getElementById('nameInput').value = d.meta.name || '';
+      document.getElementById('startTime').value = d.meta.start || '07:30';
+      document.getElementById('endTime').value = d.meta.end || '08:30';
+      if(d.std){
+        var map={stdRoadLen:'road_length',stdLanes:'lanes',stdLaneR:'lane_R',
+                 stdLaneL:'lane_L',stdLaneS:'lane_S'};
+        Object.keys(map).forEach(function(id){
+          if(d.std[map[id]] != null) document.getElementById(id).value = d.std[map[id]];
+        });
+      }
+      if(d.carry != null) document.getElementById('carryForward').checked = !!d.carry;
+      updateDuration();
+      SELECTED = null;
+      renderLattice(); updateProgress();
+      DRAFT_OFF = false;
+      var when = '';
+      try{ var t = new Date(d.savedAt);
+           when = t.toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}); }catch(e){}
+      toast('前回の下書きを復元しました（' + Object.keys(valid).length + ' 本'
+            + (when ? ' / ' + when : '') + '）', 'ok');
+      setDraftStatus('前回の下書きを復元しました。'
+        + (dropped ? '（対応しない ' + dropped + ' 本は除外）' : ''));
+      document.getElementById('draftClearBtn').style.display = '';
+      return true;
+    })
+    .catch(function(){ DRAFT_OFF = false; return false; });
+}
+
+// entries を変える処理はすべて updateProgress() を通るので、そこに保存を挟む。
+(function(){
+  var orig = updateProgress;
+  updateProgress = function(){ var r = orig.apply(this, arguments); scheduleSave(); return r; };
+})();
+['nameInput','startTime','endTime',
+ 'stdRoadLen','stdLanes','stdLaneR','stdLaneL','stdLaneS','carryForward'].forEach(function(id){
+  document.getElementById(id).addEventListener('change', scheduleSave);
+});
+document.getElementById('draftClearBtn').addEventListener('click', function(){
+  if(!confirm('この端末に保存された下書きを削除します。画面の入力内容はそのまま残ります。')) return;
+  clearDraft(false);
+});
+// タブを閉じる／リロードの直前に、待機中の保存を確定させる
+window.addEventListener('beforeunload', function(){
+  if(DRAFT_TIMER){ clearTimeout(DRAFT_TIMER); DRAFT_TIMER = null; saveDraft(); }
+});
+
+// 小さい画面では解析設定をドロワーとして開く
+(function(){
+  var app=document.getElementById('app');
+  var menu=document.getElementById('menuBtn');
+  var scrim=document.getElementById('scrim');
+  function closeMenu(){ app.classList.remove('sb-open'); }
+  menu.addEventListener('click',function(){ app.classList.toggle('sb-open'); });
+  scrim.addEventListener('click',closeMenu);
+  window.addEventListener('resize',function(){ if(window.innerWidth>900) closeMenu(); });
+})();
+
+updateScaleNote();
+updateDuration();
+updateProgress();
+loadSkeletonIndex().then(restoreDraft);
+</script>
+</body>
+</html>
