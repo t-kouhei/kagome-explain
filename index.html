@@ -6,8 +6,11 @@
 <title>渋滞ダッシュボード</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script src="data.js"></script>
-<script src="data_verify.js"></script>
-<script src="response_demo.js"></script>
+<!--
+  検証データ(data_verify.js 2.3MB)と応答解析デモ(response_demo.js 1.0MB)は
+  ここでは読み込まない。データ切替で選ばれたときだけ取りに行く（loadDemoBundle）。
+  常時読むと開くたびに 3.6MB になり、遠隔で開く相手を待たせるため。
+-->
 <style>
   :root{
     --bg:#f3f6fa; --surface:#ffffff; --surface-2:#f7f9fc;
@@ -179,7 +182,7 @@
     padding:8px 12px;min-height:34px;align-items:center;background:var(--surface);
     border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--sh-1)}
   .legend i{display:inline-block;width:18px;height:3px;vertical-align:3px;margin-right:4px;border-radius:2px}
-  .cards3{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .cards3{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
   .metric{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);
     min-height:92px;padding:15px 16px;box-shadow:var(--sh-1);position:relative;overflow:hidden;
     display:flex;flex-direction:column;justify-content:center}
@@ -187,7 +190,8 @@
   .metric:nth-child(1)::before{background:var(--prejam)}
   .metric:nth-child(2)::before{background:var(--line-strong)}
   .metric:nth-child(3)::before{background:var(--control)}
-  .metric:nth-child(4)::before{background:var(--info)}
+  .metric:nth-child(4)::before{background:var(--good)}
+  .metric:nth-child(5)::before{background:var(--info)}
   /* 判定保留（誤差の範囲で未病/正常が入れ替わる辺） */
   .hold-tag{background:#eeeae2;color:#6b6257;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700}
   .hold-why{color:#cfc8bd;font-size:10.5px;line-height:1.45;margin-top:1px}
@@ -315,7 +319,8 @@
     .resp-p{grid-template-columns:28px 1fr;gap:5px 8px}
     .resp-p .resp-n,.resp-p .resp-d,.resp-p .resp-score{grid-column:2;text-align:left}
   }
-  @media (min-width:641px) and (max-width:1100px){ .cards3{grid-template-columns:repeat(2,1fr)} }
+  @media (min-width:641px) and (max-width:1250px){ .cards3{grid-template-columns:repeat(3,1fr)} }
+  @media (min-width:641px) and (max-width:900px){ .cards3{grid-template-columns:repeat(2,1fr)} }
   @media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
 </style>
 </head>
@@ -446,6 +451,8 @@
       <div class="metric"><div class="l">制御対象</div><div class="n" id="mPre" style="color:var(--prejam)">–</div></div>
       <div class="metric"><div class="l">判定保留</div><div class="n" id="mHold" style="color:var(--muted)">–</div></div>
       <div class="metric"><div class="l">制御必要</div><div class="n" id="mCtrl" style="color:var(--control)">–</div></div>
+      <div class="metric" title="いちばん余裕の小さい道路が、あと何倍の交通量で未病に入るか">
+        <div class="l">余裕倍率（最小）</div><div class="n" id="mHead">–</div></div>
       <div class="metric"><div class="l">伝播 t+r/c(最小)</div><div class="n" id="mProp">–</div></div>
     </div>
     <div id="confidence" style="font-size:11px;color:var(--muted);padding:2px 8px"></div>
@@ -734,6 +741,28 @@ function renderRiskList(edges){
   });
 }
 
+// 余裕倍率 s* = ε*/ε —「あと何倍の交通量で未病に入るか」。
+// ε は流量に線形なので、この倍率がそのまま需要の余裕になる。
+// パラメータを動かすと変わるのでライブで引き直す（分解は再計算しない）。
+function renderHeadroom(vEdges){
+  const el=document.getElementById("mHead"); if(!el) return;
+  const ln=Math.log(LIVE.threshold/(1-LIVE.threshold));
+  let best=Infinity, bestEdge=null;
+  vEdges.forEach(e=>{
+    if(e.boundary_incomplete) return;
+    const eps=epsOf(e), b=e._beta;
+    if(!(eps>0)||!(b>0)) return;
+    const s=(LIVE.mu+ln/b)/eps;          // ε をこの倍率にすると閾値ちょうど
+    if(s<best){ best=s; bestEdge=e; }
+  });
+  if(!isFinite(best)){ el.textContent="–"; el.title=""; return; }
+  el.textContent=(best<=1?"超過":best.toFixed(2)+"倍");
+  el.style.color=(best<=1?"var(--control)":(best<1.2?"var(--prejam)":"var(--ink)"));
+  el.title=bestEdge?("最小は "+bestEdge.source.type+"("+(bestEdge.source.i-voff)+","
+    +(bestEdge.source.j-voff)+")→"+bestEdge.target.type+"("+(bestEdge.target.i-voff)+","
+    +(bestEdge.target.j-voff)+") r"+bestEdge.road):"";
+}
+
 // 「この結果をどこまで信じてよいか」を1行で出す
 function renderConfidence(vEdges){
   const el=document.getElementById("confidence"); if(!el) return;
@@ -775,6 +804,7 @@ function render(){
   const mh=document.getElementById("mHold");
   if(mh) mh.textContent=vEdges.filter(e=>e.verdict==="hold").length;
   document.getElementById("mCtrl").textContent=vEdges.filter(e=>e.is_control_needed).length;
+  renderHeadroom(vEdges);
   renderConfidence(vEdges);
   const vIds=new Set(vEdges.map(e=>e.id));
   const vProp=DATA.propagation.filter(p=>vIds.has(p.source_edge)&&vIds.has(p.target_edge));
@@ -1165,6 +1195,34 @@ function ctlRow(label, idb, ida){
   return '<div class="ctl-kv"><span>' + label + '</span>' +
          '<span><span class="b4" id="' + idb + '">–</span> → <span class="af" id="' + ida + '">–</span></span></div>';
 }
+// ── デモデータの遅延読み込み ────────────────────────────────
+// 検証データ(2.3MB)と応答解析デモ(1.0MB)は、切替で選ばれたときだけ取りに行く。
+// 常時 <script> で読むと、開くたびに 3.6MB を待つことになる。
+// どちらも window.<変数> に代入する形の .js なので、script タグを足して読む。
+const DEMO_LOADED = {};
+function loadDemoBundle(file, globalName, label){
+  if(window[globalName]) return Promise.resolve(window[globalName]);
+  if(DEMO_LOADED[file]) return DEMO_LOADED[file];
+  setFileStatus(label + "を読み込み中…");
+  DEMO_LOADED[file] = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = file;
+    s.onload = () => {
+      if(window[globalName]) resolve(window[globalName]);
+      else { toast(label + "(" + file + ")の中身が読めません。"); reject(new Error(file)); }
+    };
+    s.onerror = () => {
+      delete DEMO_LOADED[file];
+      setFileStatus("");
+      toast(label + "(" + file + ")が見つかりません。\n"
+            + "python src/export_analysis_json.py で再生成してください。");
+      reject(new Error(file));
+    };
+    document.head.appendChild(s);
+  });
+  return DEMO_LOADED[file];
+}
+
 // ── 応答解析パネル ──────────────────────────────────────────
 // Python が G=(I−M)⁻¹ から出した「効く場所」を読むだけ。
 // 行列そのものは重いので JSON には載せず、狙い先ごとの上位だけが来る。
@@ -1256,8 +1314,14 @@ function updateControlPanel(){
       // シナリオが付くので、そこは介入の前提が揺れていることを明示する。
       const hold = e.verdict === "hold"
         ? '<span class="ctl-pill" style="background:#eeeae2;color:#6b6257" title="この辺の未病判定は誤差の範囲で変わります">判定保留</span>' : '';
+      // 解消に要る規制量まで進めると台数が負になるシナリオは、選ぶ前に分かるようにする
+      const sc0 = DATA.control.scenarios[id];
+      const firstBad = (sc0.steps || []).find(s => (s.negative_flows || 0) > 0);
+      const badTag = (firstBad && pl.dbsMin >= firstBad.dbs)
+        ? '<span class="ctl-pill" style="background:#fdecec;color:#a32d2d"'
+          + ' title="解消に要る規制量まで進めると台数が負になります">成立しない</span>' : '';
       html += '<div class="ctl-item" data-ctl="' + id + '"><b>' + e.jam_score.toFixed(2) + '</b>'
-        + '<span style="flex:1">' + ctlLabel(id) + '</span>' + hold
+        + '<span style="flex:1">' + ctlLabel(id) + '</span>' + hold + badTag
         + '<span class="ctl-pill" style="' + pl.cls + '">' + pl.feas + '</span></div>';
     });
     body.innerHTML = html + '</div>';
@@ -1346,15 +1410,26 @@ function updateControlPanel(){
   else {
     const resolved = jamA < LIVE.threshold;
     const newRed = ctlNewRed();
-    const ok = resolved && ma.nPre <= mb.nPre && newRed.length === 0;
+    // ★ 負の流量が出た介入は「やり過ぎの兆候」ではなく、そもそも成立していない。
+    //   車の台数が負になる配分は現実に存在しないので、成功判定から外す。
+    const invalid = (st.negative_flows || 0) > 0;
+    const leaked = st.leaked || 0;
+    const ok = resolved && ma.nPre <= mb.nPre && newRed.length === 0 && !invalid;
     msg.innerHTML =
-      (resolved ? '<b class="ctl-good">✅ 対象辺は解消</b>' : '<b class="ctl-bad">❌ 対象辺は未解消</b>')
+      (invalid ? '<b class="ctl-bad">⛔ この介入は成立しません（負の流量 '
+                 + st.negative_flows + ' 本）</b><br>' : '')
+      + (resolved ? '<b class="ctl-good">✅ 対象辺は解消</b>' : '<b class="ctl-bad">❌ 対象辺は未解消</b>')
       + (newRed.length ? ' ｜ <b class="ctl-bad">⚠ 渋滞の移転: 新規赤 ' + newRed.length + '本</b>'
                          + '<span class="hint">（' + newRed.map(ctlLabel).join('、') + '）</span>'
                        : ' ｜ 新規赤なし')
+      + (leaked > 0.5 ? ' ｜ <span class="hint">格子の外へ ' + Math.round(leaked)
+                        + ' 台ぶん抜けています（そのぶんは評価できていません）</span>' : '')
       + '<br>' + (ok ? '<b class="ctl-good">成功判定 G: 成功</b>'
                      : '<b class="ctl-bad">成功判定 G: 失敗</b>')
-      + '<span class="hint">（e解消 かつ 制御対象数 非増加 かつ 新規赤なし）</span>';
+      + '<span class="hint">（対象辺の解消 かつ 制御対象数が非増加 かつ 新規赤なし'
+      + ' かつ 負の流量なし）</span>'
+      + (invalid ? '<br><span class="hint">規制量を下げるか、右左折の受け皿'
+                   + '（レーン増設など）を先に確保してください。</span>' : '');
   }
 }
 
@@ -1450,26 +1525,26 @@ document.getElementById("runBtn").addEventListener("click",()=>{
     return;
   }
   if(mode==="response_demo"){
-    const d=window.ANALYSIS_RESPONSE_DEMO;
-    if(!d){ toast("応答解析デモ(response_demo.js)が見つかりません。"); return; }
-    const mmax=(d.meta.view&&d.meta.view.max)||d.meta.cols;
-    viewN=mmax;
-    document.getElementById("gridSelect").value=mmax+"x"+mmax;
-    document.getElementById("srcInfo").textContent="仮想観測データ（5×5 / 応答解析あり）";
-    setFileStatus("応答行列・余裕倍率・吸い込み容量・影響ランキングを表示中");
-    selected=null;
-    loadData(d);
+    loadDemoBundle("response_demo.js","ANALYSIS_RESPONSE_DEMO","応答解析デモ").then(d=>{
+      const mmax=(d.meta.view&&d.meta.view.max)||d.meta.cols;
+      viewN=mmax;
+      document.getElementById("gridSelect").value=mmax+"x"+mmax;
+      document.getElementById("srcInfo").textContent="仮想観測データ（5×5 / 応答解析あり）";
+      setFileStatus("応答行列・余裕倍率・吸い込み容量・影響ランキングを表示中");
+      selected=null;
+      loadData(d);
+    }).catch(()=>{});
     return;
   }
   if(mode==="verify"){
-    const v=window.ANALYSIS_VERIFY;
-    if(!v){ toast("検証データ(data_verify.js)が見つかりません。"); return; }
-    const mmax=(v.meta.view&&v.meta.view.max)||v.meta.cols;
-    viewN=Math.min(parseInt(document.getElementById("gridSelect").value)||3, mmax);
-    document.getElementById("srcInfo").textContent="検証データ（seed=1 / "+v.meta.cols+"×"+v.meta.rows+"）";
-    setFileStatus("インデックス監査と同一の仮データを表示中");
-    selected=null;
-    loadData(v);
+    loadDemoBundle("data_verify.js","ANALYSIS_VERIFY","検証データ").then(v=>{
+      const mmax=(v.meta.view&&v.meta.view.max)||v.meta.cols;
+      viewN=Math.min(parseInt(document.getElementById("gridSelect").value)||3, mmax);
+      document.getElementById("srcInfo").textContent="検証データ（seed=1 / "+v.meta.cols+"×"+v.meta.rows+"）";
+      setFileStatus("インデックス監査と同一の仮データを表示中");
+      selected=null;
+      loadData(v);
+    }).catch(()=>{});
     return;
   }
   const master=window.ANALYSIS_MASTER||window.ANALYSIS;
