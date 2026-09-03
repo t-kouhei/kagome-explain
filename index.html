@@ -448,18 +448,23 @@
     <div class="legend" id="legend"></div>
 
     <div class="cards3">
-      <div class="metric"><div class="l">制御対象</div><div class="n" id="mPre" style="color:var(--prejam)">–</div></div>
-      <div class="metric"><div class="l">判定保留</div><div class="n" id="mHold" style="color:var(--muted)">–</div></div>
-      <div class="metric"><div class="l">制御必要</div><div class="n" id="mCtrl" style="color:var(--control)">–</div></div>
+      <div class="metric"><div class="l">渋滞の一歩手前</div><div class="n" id="mPre" style="color:var(--prejam)">–</div></div>
+      <div class="metric"><div class="l">判断を保留</div><div class="n" id="mHold" style="color:var(--muted)">–</div></div>
+      <div class="metric"><div class="l">対策が要る</div><div class="n" id="mCtrl" style="color:var(--control)">–</div></div>
       <div class="metric" title="いちばん余裕の小さい道路が、あと何倍の交通量で未病に入るか">
-        <div class="l">余裕倍率（最小）</div><div class="n" id="mHead">–</div></div>
-      <div class="metric"><div class="l">伝播 t+r/c(最小)</div><div class="n" id="mProp">–</div></div>
+        <div class="l">あと何倍もつか(最小)</div><div class="n" id="mHead">–</div></div>
+      <div class="metric"><div class="l">影響が届くまで(最短)</div><div class="n" id="mProp">–</div></div>
     </div>
     <div id="confidence" style="font-size:11px;color:var(--muted);padding:2px 8px"></div>
     <div id="integrity" style="font-size:11px;color:var(--muted);padding:2px 8px"></div>
 
     <div class="card future">
-      <h3>応答解析 <span>どこを変えると、どこがどう動くか</span></h3>
+      <h3>受け皿をつくる <span>交通そのものを減らす。渋滞が他所へ移らない</span></h3>
+      <div class="body" id="sinkBody">読み込み中…</div>
+    </div>
+
+    <div class="card future">
+      <h3>効く場所をさがす <span>どこの交通を減らすと、どの道路が楽になるか</span></h3>
       <div class="body" id="respBody">読み込み中…</div>
     </div>
 
@@ -597,6 +602,7 @@ function recompute(){
   render();
   updateControlPanel();
   updateResponsePanel();
+  updateSinkPanel();
 }
 // ── パラメータ設定案（解説書 第7章の「解釈モード」。バー操作でカスタムへ自動遷移） ──
 const PRESETS={   // 各案の意味・根拠は解説書 第7章
@@ -676,6 +682,36 @@ function colorScale(){
   document.getElementById("swatch").style.background=`linear-gradient(90deg,${c.grad[0]},${c.grad[1]})`;
   const s=d3.scaleSequential(c.ramp).domain([sc.min,sc.max]).clamp(true);
   return s;
+}
+
+// ── 交通の言葉で1行に要約する ──────────────────────────────
+// 数式の記号のままでは交通の人に通じない。
+// この道具が測っているのは「素通りしたい車の量」であって
+// 「その道路の混雑」ではない、という点も併せて伝える。
+function trafficReading(e){
+  const eps=epsOf(e), ratio=eps/LIVE.mu;
+  const turn=Math.max(0,e.J_out-straightPotential(e));
+  const turnPct=e.J_out>0?(100*turn/e.J_out):0;
+  let head, cls;
+  if(e.verdict==="hold"){ head="判断を保留"; cls="#6b6257"; }
+  else if(e.is_pre_jam){ head="渋滞の一歩手前"; cls="var(--prejam)"; }
+  else { head="いまは問題なし"; cls="#1d7a52"; }
+  return `<div style="background:var(--surface-2);border-radius:6px;padding:7px 9px;`
+    + `margin-bottom:7px;font-size:11.5px;line-height:1.6">`
+    + `<b style="color:${cls}">${head}</b> — `
+    + `この道路を<b>素通りしたい車が ${Math.round(eps).toLocaleString()} 台/時/車線</b>。`
+    + `1車線がさばける量（${Math.round(LIVE.mu).toLocaleString()}）の<b>${ratio.toFixed(2)}倍</b>です。`
+    + `<br>測った交通量 ${Math.round(e.J_out).toLocaleString()} 台のうち `
+    + `${turnPct.toFixed(0)}% はこの先で曲がって出ていくので、素通り分から差し引いています。`
+    + `</div>`;
+}
+
+// 余裕倍率を1つの辺について返す（「あと何倍の交通量に耐えるか」）
+function headroomOf(e){
+  const eps=epsOf(e), b=e._beta;
+  if(!(eps>0)||!(b>0)) return "–";
+  const s=(LIVE.mu+Math.log(LIVE.threshold/(1-LIVE.threshold))/b)/eps;
+  return s<=1 ? "すでに超過" : s.toFixed(2)+" 倍";
 }
 
 // なぜ保留になったのかを一言で返す
@@ -770,15 +806,16 @@ function renderConfidence(vEdges){
   if(!u){ el.textContent=""; return; }
   const d=u.decomposition||{};
   const parts=[];
-  parts.push(`交通量のばらつき: <b>${d.regime||'–'}</b>`);
-  parts.push(`分解の誤差 目安 ${(d.typical_pct||0).toFixed(1)}% / 上限 <b>${(d.upper_pct||0).toFixed(1)}%</b>`);
-  if(u.estimated_edges) parts.push(`自動補完 ${u.estimated_edges}辺（${u.trials}回振り直し）`);
+  parts.push(`隣り合う道路の交通量の揃い方: <b>${d.regime||'–'}</b>`);
+  parts.push(`この結果の誤差 目安 ${(d.typical_pct||0).toFixed(1)}% / 最大 <b>${(d.upper_pct||0).toFixed(1)}%</b>`);
+  if(u.estimated_edges) parts.push(`推定で埋めた道路 ${u.estimated_edges}本（${u.trials}回振り直して確認）`);
   if(nb&&nb.checked_nodes){
-    parts.push(`節点収支の不一致 ${nb.imbalanced}/${nb.checked_nodes}箇所`);
-    if(nb.unit_sign_conflicts) parts.push(`<b style="color:var(--control)">単位系で符号が逆転 ${nb.unit_sign_conflicts}箇所</b>`);
+    parts.push(`交差点で数が合わない ${nb.imbalanced}/${nb.checked_nodes}箇所`);
+    if(nb.unit_sign_conflicts) parts.push(`<b style="color:var(--control)">過不足の向きが単位で逆転 ${nb.unit_sign_conflicts}箇所</b>`);
   }
-  el.innerHTML="確からしさ: "+parts.join(" ｜ ")
-    +`<br><span style="opacity:.85">上限より小さい差は判断の材料にしないでください。閾値付近の辺は「判定保留」として区別しています。</span>`;
+  el.innerHTML="この結果をどこまで信じてよいか: "+parts.join(" ｜ ")
+    +`<br><span style="opacity:.85">この誤差より小さい差は、判断の材料にしないでください。`
+    +`境目に近い道路は「判断を保留」として分けてあります。</span>`;
 }
 
 function render(){
@@ -1044,15 +1081,19 @@ function selectEdge(e){
     warn+holdNote+
     `<div style="margin-bottom:6px"><b>${e.source.type}(${e.source.i-voff},${e.source.j-voff}) → ${e.target.type}(${e.target.i-voff},${e.target.j-voff})</b> ${flag}</div>`+
     `<div class="hint" style="margin-bottom:6px">road ${e.road}（id: ${e.id}）</div>`+
-    row("観測 J_out", fmt(e.J_out))+
-    row("− 回転成分(右左折)", fmt(turn))+
-    row("= 直進 J⁻", fmt(jStraight),true)+
+    trafficReading(e)+
+    row("測った交通量", fmt(e.J_out)+" 台/時/車線")+
+    row("− うち曲がっていく分", fmt(turn)+" 台")+
+    row("= 素通りしたい分 (ε)", fmt(jStraight)+" 台",true)+
     `<div style="height:6px"></div>`+
-    row("ε 入力", fmt(epsOf(e)))+
-    row("β（この道路）", e._beta!=null?e._beta.toFixed(4):"–")+
-    row("jam_score", e.jam_score.toFixed(3),true)+
-    row("P_in / P_out", fmt(e.p_in)+" / "+fmt(e.p_out))+
-    row("蓄積 (P_in−P_out)", fmt(e.accumulation));
+    row("容量に対する比", (epsOf(e)/LIVE.mu).toFixed(2)+" 倍（容量 "+Math.round(LIVE.mu)+"）")+
+    row("渋滞の一歩手前度", e.jam_score.toFixed(3)+"（危険域は "+LIVE.threshold+" 以上）",true)+
+    row("あと何倍まで耐えるか", headroomOf(e))+
+    `<div style="height:6px"></div>`+
+    `<div class="hint" style="margin-bottom:3px">参考（内部の値）</div>`+
+    row("感度 β（直進率から決まる）", e._beta!=null?e._beta.toFixed(4):"–")+
+    row("流入 / 流出", fmt(e.p_in)+" / "+fmt(e.p_out))+
+    row("蓄積（流入−流出）", fmt(e.accumulation));
   ctlSelect(e.id);   // 介入状態を整理して再計算・再描画（renderを含む）
 }
 
@@ -1060,18 +1101,27 @@ function selectFace(kind,f){
   selected={type:"face",d:f};
   if(kind==="tri"){
     document.getElementById("detailBody").innerHTML=
-      `<div style="margin-bottom:6px"><b>三角形 (${f.i-voff},${f.j-voff})</b>（${f.orientation==="up"?"上向き":"下向き"}）</div>`+
-      row("s⁺ 右回り", fmt(f.s_plus))+
-      row("s⁻ 左回り", fmt(f.s_minus))+
-      row("|s⁺−s⁻| 偏り", fmt(Math.abs(f.s_plus-f.s_minus)),true)+
-      `<div class="hint" style="margin-top:6px">s は3頂点 τ の合計。直進ポテンシャルでは s/3 を差し引く。</div>`;
+      `<div style="margin-bottom:6px"><b>小さい街区 (${f.i-voff},${f.j-voff})</b>`
+      + `（${f.orientation==="up"?"上向き":"下向き"}の三角形）</div>`+
+      `<div class="hint" style="margin-bottom:6px">3つの交差点で囲まれた一番小さい区画。`
+      + `ここを<b>ぐるぐる回っている交通</b>の量を見ています。</div>`+
+      row("時計回りに回る量", fmt(f.s_plus)+" 台")+
+      row("反時計回りに回る量", fmt(f.s_minus)+" 台")+
+      row("向きの偏り", fmt(Math.abs(f.s_plus-f.s_minus))+" 台",true)+
+      `<div class="hint" style="margin-top:6px">偏りが大きいほど、この街区で一方向の`
+      + `回り込みが起きています。素通り需要からは合計の1/3を差し引きます（s/3）。</div>`;
   } else {
     document.getElementById("detailBody").innerHTML=
-      `<div style="margin-bottom:6px"><b>六角形 (${f.i-voff},${f.j-voff})</b></div>`+
-      row("σ⁺ 右回り", fmt(f.sigma_plus))+
-      row("σ⁻ 左回り", fmt(f.sigma_minus))+
-      row("|σ⁺−σ⁻| 偏り", fmt(Math.abs(f.sigma_plus-f.sigma_minus)),true)+
-      `<div class="hint" style="margin-top:6px">σ は6頂点 τ の合計。直進ポテンシャルでは σ/6 を差し引く。</div>`;
+      `<div style="margin-bottom:6px"><b>大きい街区 (${f.i-voff},${f.j-voff})</b>（六角形）</div>`+
+      `<div class="hint" style="margin-bottom:6px">6つの交差点で囲まれた広い区画。`
+      + `小さい街区より<b>広い範囲での迂回</b>を見ています。</div>`+
+      row("時計回りに回る量", fmt(f.sigma_plus)+" 台")+
+      row("反時計回りに回る量", fmt(f.sigma_minus)+" 台")+
+      row("向きの偏り", fmt(Math.abs(f.sigma_plus-f.sigma_minus))+" 台",true)+
+      `<div class="hint" style="margin-top:6px">カゴメ格子では、1本の道路が`
+      + `<b>小さい街区と大きい街区の両方</b>に属します。2つの大きさの回り込みを`
+      + `同時に見られるのがこの格子を使う理由です。素通り需要からは合計の1/6を`
+      + `差し引きます（σ/6）。</div>`;
   }
 }
 
@@ -1195,6 +1245,57 @@ function ctlRow(label, idb, ida){
   return '<div class="ctl-kv"><span>' + label + '</span>' +
          '<span><span class="b4" id="' + idb + '">–</span> → <span class="af" id="' + ida + '">–</span></span></div>';
 }
+// ── 受け皿をつくる（渋滞を減らす制御） ──────────────────────
+// 右左折規制は総量保存なので「移すだけ」。こちらは需要そのものを減らすので
+// 他所へ移らない。ε は流量に線形なので、必要台数は近似でなく厳密に出る。
+function updateSinkPanel(){
+  const body=document.getElementById("sinkBody"); if(!body||!DATA) return;
+  const plans=(DATA.response&&DATA.response.sink_control)||null;
+  if(!plans){
+    body.innerHTML='<span class="hint">このデータには受け皿の提案がありません。'
+      +'python src/export_analysis_json.py で再生成してください。</span>';
+    return;
+  }
+  if(!plans.length){
+    body.innerHTML='<span class="hint">未病の道路がないため、受け皿の提案はありません。</span>';
+    return;
+  }
+  let h='<span class="hint"><b>駐車場・迂回路・流入規制など、交通そのものを減らす施策</b>を想定しています。'
+    +'右左折規制（下の制御シミュレーション）と違い、<b>渋滞が他所へ移りません</b>。</span>'
+    +'<div class="resp-list">';
+  plans.forEach((p,idx)=>{
+    const ok=p.resolved;
+    h+='<div class="resp-t'+(idx===0?' open':'')+'">'
+      +'<div class="resp-hd"><b>'+labelOf(p.edge)+'</b>'
+      +'<span class="resp-eps">素通り需要 '+Math.round(p.epsilon)+' 台/時/車線</span>'
+      +'<span class="ctl-pill" style="'+(ok?'background:#e8f5ee;color:#1d7a52'
+                                          :'background:#fdecec;color:#a32d2d')+'">'
+      +(ok?'解消できる':'この規模では足りない')+'</span></div>'
+      +'<div class="resp-places">'
+      +'<div class="hint" style="margin-bottom:5px">容量 '+Math.round(LIVE.mu)
+      +' に対して '+Math.round(p.epsilon)+'（<b>'+(p.epsilon/LIVE.mu).toFixed(2)
+      +' 倍</b>）。<b>1時間あたり '+Math.round(p.total_vehicles)
+      +' 台</b>を受け止めれば危険域を脱します。</div>';
+    p.places.forEach(c=>{
+      h+='<div class="resp-p" data-goto="'+c.edge+'">'
+        +'<span class="resp-e">'+labelOf(c.edge)+' の沿道</span>'
+        +'<span class="resp-d">'+Math.round(c.vehicles)+' 台/時</span>'
+        +'<span class="resp-n" title="この受け皿で素通り需要がどれだけ下がるか">−'
+        +Math.round(c.drop)+'</span>'
+        +'<span class="resp-n">'+(c.at_capacity?'上限いっぱい':'')+'</span></div>';
+    });
+    h+='<div class="hint" style="margin-top:4px">'+p.note+'</div></div></div>';
+  });
+  body.innerHTML=h+'</div>';
+  body.querySelectorAll('.resp-hd').forEach(el=>el.addEventListener('click',()=>{
+    el.parentElement.classList.toggle('open');
+  }));
+  body.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',ev=>{
+    ev.stopPropagation();
+    const e=EDGE_BY_ID.get(el.dataset.goto); if(e) selectEdge(e);
+  }));
+}
+
 // ── デモデータの遅延読み込み ────────────────────────────────
 // 検証データ(2.3MB)と応答解析デモ(1.0MB)は、切替で選ばれたときだけ取りに行く。
 // 常時 <script> で読むと、開くたびに 3.6MB を待つことになる。
